@@ -324,4 +324,4 @@ This software is for educational purposes only. Trading cryptocurrencies involve
 
 ---
 
-**Made with ❤️ by the Flashloan Arbitrage Bot Team**
+***Developed by Amjad Mohamed Kamara***
