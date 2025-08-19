@@ -23,17 +23,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
 import json
+import os
 
 try:
     from colorama import Fore, Back, Style, init
-    from rich.console import Console
-    from rich.logging import RichHandler
-
-    RICH_AVAILABLE = True
+    COLORAMA_AVAILABLE = True
     init(autoreset=True)  # Initialize colorama
 except ImportError:
+    COLORAMA_AVAILABLE = False
+
+try:
+    from rich.console import Console
+    from rich.logging import RichHandler
+    RICH_AVAILABLE = True
+except ImportError:
     RICH_AVAILABLE = False
-    print("Warning: colorama and rich not installed. Install with: pip install colorama rich")
 
 
 class ColoredFormatter(logging.Formatter):
@@ -41,16 +45,16 @@ class ColoredFormatter(logging.Formatter):
 
     # Color mappings for log levels
     COLORS = {
-        'DEBUG': Fore.CYAN,
-        'INFO': Fore.GREEN,
-        'WARNING': Fore.YELLOW,
-        'ERROR': Fore.RED,
-        'CRITICAL': Fore.RED + Back.YELLOW + Style.BRIGHT
+        'DEBUG': Fore.CYAN if COLORAMA_AVAILABLE else '',
+        'INFO': Fore.GREEN if COLORAMA_AVAILABLE else '',
+        'WARNING': Fore.YELLOW if COLORAMA_AVAILABLE else '',
+        'ERROR': Fore.RED if COLORAMA_AVAILABLE else '',
+        'CRITICAL': Fore.RED + Back.YELLOW + Style.BRIGHT if COLORAMA_AVAILABLE else ''
     }
 
     def __init__(self, use_colors: bool = True):
         super().__init__()
-        self.use_colors = use_colors and RICH_AVAILABLE
+        self.use_colors = use_colors and COLORAMA_AVAILABLE
 
         # Define format templates
         self.base_format = "{timestamp} | {level:8} | {name:20} | {message}"
@@ -63,22 +67,45 @@ class ColoredFormatter(logging.Formatter):
 
         # Get color for log level
         level_color = self.COLORS.get(record.levelname, "")
-        reset_color = Style.RESET_ALL if self.use_colors else ""
+        reset_color = Style.RESET_ALL if self.use_colors and COLORAMA_AVAILABLE else ""
+
+        # Format the message - avoid unicode issues
+        message = record.getMessage()
+        
+        # Replace problematic unicode characters for Windows
+        if os.name == 'nt':
+            message = message.replace('🚀', '[ROCKET]')
+            message = message.replace('⚠️', '[WARNING]')
+            message = message.replace('✅', '[SUCCESS]')
+            message = message.replace('❌', '[ERROR]')
+            message = message.replace('🎯', '[TARGET]')
+            message = message.replace('📤', '[SEND]')
+            message = message.replace('📊', '[CHART]')
+            message = message.replace('⏱️', '[TIMER]')
 
         # Format the message
         if self.use_colors:
-            formatted_message = (
-                f"{Fore.WHITE}{timestamp}{Style.RESET_ALL} | "
-                f"{level_color}{record.levelname:8}{Style.RESET_ALL} | "
-                f"{Fore.BLUE}{record.name:20}{Style.RESET_ALL} | "
-                f"{level_color}{record.getMessage()}{reset_color}"
-            )
+            try:
+                formatted_message = (
+                    f"{Fore.WHITE if COLORAMA_AVAILABLE else ''}{timestamp}{Style.RESET_ALL if COLORAMA_AVAILABLE else ''} | "
+                    f"{level_color}{record.levelname:8}{Style.RESET_ALL if COLORAMA_AVAILABLE else ''} | "
+                    f"{Fore.BLUE if COLORAMA_AVAILABLE else ''}{record.name:20}{Style.RESET_ALL if COLORAMA_AVAILABLE else ''} | "
+                    f"{level_color}{message}{reset_color}"
+                )
+            except UnicodeEncodeError:
+                # Fallback without colors
+                formatted_message = self.base_format.format(
+                    timestamp=timestamp,
+                    level=record.levelname,
+                    name=record.name,
+                    message=message
+                )
         else:
             formatted_message = self.base_format.format(
                 timestamp=timestamp,
                 level=record.levelname,
                 name=record.name,
-                message=record.getMessage()
+                message=message
             )
 
         # Add exception info if present
@@ -97,31 +124,31 @@ class TradingLogger:
     def opportunity_found(self, token_pair: str, profit_pct: float, exchanges: Dict[str, float]):
         """Log arbitrage opportunity detection."""
         self.logger.info(
-            f"🎯 OPPORTUNITY: {token_pair} | Profit: {profit_pct:.2f}% | "
+            f"[TARGET] OPPORTUNITY: {token_pair} | Profit: {profit_pct:.2f}% | "
             f"Prices: {' vs '.join([f'{ex}:{price:.6f}' for ex, price in exchanges.items()])}"
         )
 
     def transaction_sent(self, tx_hash: str, gas_price: int, gas_limit: int):
         """Log transaction submission."""
         self.logger.info(
-            f"📤 TX_SENT: {tx_hash} | Gas: {gas_price} gwei | Limit: {gas_limit:,}"
+            f"[SEND] TX_SENT: {tx_hash} | Gas: {gas_price} gwei | Limit: {gas_limit:,}"
         )
 
     def transaction_confirmed(self, tx_hash: str, profit_amount: float, gas_used: int):
         """Log successful transaction."""
         self.logger.info(
-            f"✅ TX_SUCCESS: {tx_hash} | Profit: {profit_amount:.6f} MATIC | Gas: {gas_used:,}"
+            f"[SUCCESS] TX_SUCCESS: {tx_hash} | Profit: {profit_amount:.6f} MATIC | Gas: {gas_used:,}"
         )
 
     def transaction_failed(self, tx_hash: str, error: str, gas_lost: int = 0):
         """Log failed transaction."""
         self.logger.error(
-            f"❌ TX_FAILED: {tx_hash} | Error: {error} | Gas Lost: {gas_lost:,}"
+            f"[ERROR] TX_FAILED: {tx_hash} | Error: {error} | Gas Lost: {gas_lost:,}"
         )
 
     def risk_check_failed(self, reason: str, token_pair: str):
         """Log risk management rejection."""
-        self.logger.warning(f"⚠️ RISK_REJECTED: {token_pair} | Reason: {reason}")
+        self.logger.warning(f"[WARNING] RISK_REJECTED: {token_pair} | Reason: {reason}")
 
 
 def setup_logging(
@@ -129,7 +156,7 @@ def setup_logging(
         log_to_file: bool = True,
         log_dir: str = "logs",
         use_colors: bool = True,
-        use_rich: bool = True
+        use_rich: bool = False  # Disabled by default to avoid issues
 ) -> None:
     """
     Set up the logging system for the entire bot.
@@ -154,7 +181,7 @@ def setup_logging(
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
-    # Console handler with colors
+    # Console handler setup
     if use_rich and RICH_AVAILABLE:
         # Use Rich handler for better formatting
         console = Console()
@@ -169,6 +196,14 @@ def setup_logging(
     else:
         # Use standard handler with custom formatter
         console_handler = logging.StreamHandler(sys.stdout)
+        
+        # Set encoding for Windows compatibility
+        if hasattr(console_handler.stream, 'reconfigure') and os.name == 'nt':
+            try:
+                console_handler.stream.reconfigure(encoding='utf-8')
+            except:
+                pass
+        
         console_handler.setLevel(numeric_level)
         console_formatter = ColoredFormatter(use_colors=use_colors)
         console_handler.setFormatter(console_formatter)
@@ -178,7 +213,8 @@ def setup_logging(
     # File handler for general logs
     if log_to_file:
         file_handler = logging.FileHandler(
-            Path(log_dir) / f"arbitrage_bot_{datetime.now().strftime('%Y%m%d')}.log"
+            Path(log_dir) / f"arbitrage_bot_{datetime.now().strftime('%Y%m%d')}.log",
+            encoding='utf-8'
         )
         file_handler.setLevel(logging.DEBUG)  # Always log everything to file
         file_formatter = ColoredFormatter(use_colors=False)  # No colors in files
@@ -187,7 +223,8 @@ def setup_logging(
 
         # Separate file for trading events
         trading_handler = logging.FileHandler(
-            Path(log_dir) / f"trading_{datetime.now().strftime('%Y%m%d')}.log"
+            Path(log_dir) / f"trading_{datetime.now().strftime('%Y%m%d')}.log",
+            encoding='utf-8'
         )
         trading_handler.setLevel(logging.INFO)
         trading_handler.addFilter(lambda record: 'TRADING' in record.name)
@@ -202,9 +239,9 @@ def setup_logging(
     logging.getLogger("web3").setLevel(logging.WARNING)
     logging.getLogger("requests").setLevel(logging.WARNING)
 
-    # Initial log message
+    # Initial log message - Windows safe
     logger = get_logger("SETUP")
-    logger.info("🚀 Logging system initialized")
+    logger.info("[ROCKET] Logging system initialized")
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -257,7 +294,7 @@ class PerformanceLogger:
         del self.start_times[operation]
 
         info_str = f" | {extra_info}" if extra_info else ""
-        self.logger.info(f"⏱️ {operation}: {duration:.3f}s{info_str}")
+        self.logger.info(f"[TIMER] {operation}: {duration:.3f}s{info_str}")
 
 
 def get_performance_logger(name: str) -> PerformanceLogger:
@@ -268,4 +305,3 @@ def get_performance_logger(name: str) -> PerformanceLogger:
 # Auto-setup logging when module is imported
 if not logging.getLogger().handlers:
     setup_logging()
-# Logging system
