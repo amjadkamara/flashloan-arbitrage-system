@@ -1,4 +1,5 @@
-# Configuration management 
+# -*- coding: utf-8 -*-
+# Configuration management
 # config/settings.py
 
 """
@@ -19,17 +20,17 @@ from dotenv import load_dotenv
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from bot.utils.logger import get_logger
+import logging
 
-logger = get_logger('settings')
+logger = logging.getLogger('settings')
 
 # Load environment variables
 env_path = project_root / 'config' / '.env'
 if env_path.exists():
     load_dotenv(env_path)
-    logger.info(f"✅ Loaded environment from {env_path}")
+    logger.info(f"[SUCCESS] Loaded environment from {env_path}")
 else:
-    logger.warning(f"⚠️ No .env file found at {env_path}")
+    logger.warning(f"[WARNING] No .env file found at {env_path}")
 
 
 @dataclass
@@ -141,7 +142,7 @@ class Settings:
         # Validate configuration
         self._validate_configuration()
 
-        logger.info("⚙️ Configuration loaded successfully")
+        logger.info("[CONFIG] Configuration loaded successfully")
         self._log_configuration_summary()
 
     def _load_network_config(self) -> NetworkConfig:
@@ -176,7 +177,7 @@ class Settings:
         }
 
         if network_name not in networks:
-            logger.warning(f"⚠️ Unknown network {network_name}, defaulting to polygon")
+            logger.warning(f"[WARNING] Unknown network {network_name}, defaulting to polygon")
             network_name = 'polygon'
 
         return networks[network_name]
@@ -300,27 +301,27 @@ class Settings:
 
         # Log results
         if errors:
-            logger.error(f"❌ Configuration errors: {', '.join(errors)}")
+            logger.error(f"[ERROR] Configuration errors: {', '.join(errors)}")
             raise ValueError(f"Configuration validation failed: {', '.join(errors)}")
 
         if warnings:
             for warning in warnings:
-                logger.warning(f"⚠️ {warning}")
+                logger.warning(f"[WARNING] {warning}")
 
     def _log_configuration_summary(self):
         """Log configuration summary"""
-        logger.info("📋 Configuration Summary:")
-        logger.info(f"  🌐 Network: {self.network.name} ({'TESTNET' if self.network.is_testnet else 'MAINNET'})")
-        logger.info(f"  💰 Min Profit: ${self.trading.min_profit_threshold}")
-        logger.info(f"  📈 Max Trade: ${self.trading.max_trade_size}")
-        logger.info(f"  🎯 Slippage: {self.trading.slippage_tolerance:.2%}")
-        logger.info(f"  🛡️ Risk Mode: {'DRY RUN' if self.security.dry_run_mode else 'LIVE TRADING'}")
-        logger.info(f"  📊 DEXes: {', '.join(self.dex.enabled_dexes)}")
+        logger.info("[CONFIG] Configuration Summary:")
+        logger.info(f"  [NETWORK] Network: {self.network.name} ({'TESTNET' if self.network.is_testnet else 'MAINNET'})")
+        logger.info(f"  [PROFIT] Min Profit: ${self.trading.min_profit_threshold}")
+        logger.info(f"  [TRADE] Max Trade: ${self.trading.max_trade_size}")
+        logger.info(f"  [TARGET] Slippage: {self.trading.slippage_tolerance:.2%}")
+        logger.info(f"  [RISK] Risk Mode: {'DRY RUN' if self.security.dry_run_mode else 'LIVE TRADING'}")
+        logger.info(f"  [DEXES] DEXes: {', '.join(self.dex.enabled_dexes)}")
 
         if self.security.dry_run_mode:
-            logger.warning("🔶 DRY RUN MODE - No real trades will be executed")
+            logger.warning("[SAFE] DRY RUN MODE - No real trades will be executed")
         if self.network.is_testnet:
-            logger.warning("🔶 TESTNET MODE - Using testnet contracts and tokens")
+            logger.warning("[SAFE] TESTNET MODE - Using testnet contracts and tokens")
 
     def get_contract_address(self, contract_name: str) -> Optional[str]:
         """Get contract address for current network"""
@@ -337,7 +338,7 @@ class Settings:
             return None
 
         except Exception as e:
-            logger.warning(f"⚠️ Could not load contract address for {contract_name}: {e}")
+            logger.warning(f"[WARNING] Could not load contract address for {contract_name}: {e}")
             return None
 
     def save_contract_address(self, contract_name: str, address: str):
@@ -370,10 +371,10 @@ class Settings:
                         f.write(f'    "{contract}": "{addr}",\n')
                     f.write("}\n\n")
 
-            logger.info(f"✅ Saved {contract_name} address: {address}")
+            logger.info(f"[SUCCESS] Saved {contract_name} address: {address}")
 
         except Exception as e:
-            logger.error(f"❌ Failed to save contract address: {e}")
+            logger.error(f"[ERROR] Failed to save contract address: {e}")
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert settings to dictionary (excluding sensitive data)"""

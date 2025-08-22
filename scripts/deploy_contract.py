@@ -1,4 +1,4 @@
-# Python deployment 
+# Python deployment
 # scripts/deploy_contract.py
 
 """
@@ -9,6 +9,7 @@ Handles deployment, verification, and testing of the arbitrage contract
 import asyncio
 import json
 import sys
+import os
 import time
 import subprocess
 from pathlib import Path
@@ -16,19 +17,51 @@ from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from decimal import Decimal
 import argparse
+import logging
+import codecs
+
+# Fix Unicode encoding issues on Windows
+if sys.platform == 'win32':
+    # Set environment variables
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    os.environ['PYTHONUTF8'] = '1'
+
+    # Reconfigure stdout and stderr for UTF-8
+    if hasattr(sys.stdout, 'reconfigure'):
+        # Python 3.7+
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            # Fallback if reconfigure fails
+            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach(), errors='replace')
+            sys.stderr = codecs.getwriter('utf-8')(sys.stderr.detach(), errors='replace')
+    else:
+        # Fallback for older Python versions
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach(), errors='replace')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.detach(), errors='replace')
+
+# Setup basic logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('deployment.log')
+    ]
+)
+
+logger = logging.getLogger('deploy_contract')
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
+from web3.middleware.proof_of_authority import ExtraDataToPOAMiddleware
 from eth_account import Account
 
 from config.settings import load_settings, Settings
 from config.addresses import get_network_addresses
-from bot.utils.logger import get_logger
-
-logger = get_logger('deploy_contract')
 
 
 @dataclass
@@ -77,7 +110,7 @@ class ContractDeployer:
 
         # Add PoA middleware for Polygon
         if 'polygon' in self.settings.network.name.lower() or 'mumbai' in self.settings.network.name.lower():
-            self.web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            self.web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
         # Account setup
         if self.settings.security.private_key:
@@ -90,7 +123,7 @@ class ContractDeployer:
         self.artifacts_dir = self.project_root / 'artifacts' / 'contracts'
         self.contracts_dir = self.project_root / 'contracts'
 
-        logger.info(f"🚀 Contract Deployer initialized for {self.settings.network.name}")
+        logger.info(f"[DEPLOY] Contract Deployer initialized for {self.settings.network.name}")
 
     async def deploy_flashloan_contract(self) -> DeploymentResult:
         """
@@ -100,7 +133,7 @@ class ContractDeployer:
             DeploymentResult: Deployment outcome and details
         """
         try:
-            logger.info("📦 Starting FlashloanArbitrage contract deployment...")
+            logger.info("[START] Starting FlashloanArbitrage contract deployment...")
 
             # Pre-deployment checks
             if not await self._pre_deployment_checks():
@@ -127,7 +160,7 @@ class ContractDeployer:
                 # Aave Data Provider
             ]
 
-            logger.info(f"📋 Constructor args: {constructor_args}")
+            logger.info(f"[ARGS] Constructor args: {constructor_args}")
 
             # Deploy contract
             result = await self._deploy_contract(
@@ -152,14 +185,14 @@ class ContractDeployer:
                 # Test contract deployment
                 test_result = await self._test_deployed_contract(result.contract_address)
                 if not test_result:
-                    logger.warning("⚠️ Contract deployed but failed basic tests")
+                    logger.warning("[WARNING] Contract deployed but failed basic tests")
 
-                logger.success(f"✅ FlashloanArbitrage deployed at: {result.contract_address}")
+                logger.info(f"[SUCCESS] FlashloanArbitrage deployed at: {result.contract_address}")
 
             return result
 
         except Exception as e:
-            logger.error(f"❌ Deployment failed: {e}")
+            logger.error(f"[ERROR] Deployment failed: {e}")
             return DeploymentResult(
                 success=False,
                 error_message=str(e)
@@ -167,61 +200,61 @@ class ContractDeployer:
 
     async def _pre_deployment_checks(self) -> bool:
         """Perform pre-deployment validation checks"""
-        logger.info("🔍 Running pre-deployment checks...")
+        logger.info("[CHECK] Running pre-deployment checks...")
 
         try:
             # Check Web3 connection
-            if not self.web3.isConnected():
-                logger.error("❌ Web3 connection failed")
+            if not self.web3.is_connected():
+                logger.error("[ERROR] Web3 connection failed")
                 return False
 
             # Check account balance
             balance = self.web3.eth.get_balance(self.account.address)
-            balance_ether = self.web3.fromWei(balance, 'ether')
+            balance_ether = self.web3.from_wei(balance, 'ether')
 
             min_balance = Decimal("0.1")  # Minimum 0.1 MATIC for deployment
             if balance_ether < min_balance:
-                logger.error(f"❌ Insufficient balance: {balance_ether} MATIC (need at least {min_balance})")
+                logger.error(f"[ERROR] Insufficient balance: {balance_ether} MATIC (need at least {min_balance})")
                 return False
 
-            logger.info(f"✅ Account balance: {balance_ether} MATIC")
+            logger.info(f"[SUCCESS] Account balance: {balance_ether} MATIC")
 
             # Check if contracts are compiled
             if not await self._check_compiled_contracts():
-                logger.error("❌ Contracts not compiled")
+                logger.error("[ERROR] Contracts not compiled")
                 return False
 
             # Check network
             chain_id = self.web3.eth.chain_id
             if chain_id != self.settings.network.chain_id:
-                logger.error(f"❌ Chain ID mismatch: expected {self.settings.network.chain_id}, got {chain_id}")
+                logger.error(f"[ERROR] Chain ID mismatch: expected {self.settings.network.chain_id}, got {chain_id}")
                 return False
 
-            logger.info(f"✅ Connected to {self.settings.network.name} (Chain ID: {chain_id})")
+            logger.info(f"[SUCCESS] Connected to {self.settings.network.name} (Chain ID: {chain_id})")
 
             # Check gas price
             gas_price = self.web3.eth.gas_price
             gas_price_gwei = gas_price / 1e9
 
             if gas_price_gwei > self.settings.trading.gas_price_limit:
-                logger.warning(f"⚠️ High gas price: {gas_price_gwei:.1f} gwei")
+                logger.warning(f"[WARNING] High gas price: {gas_price_gwei:.1f} gwei")
                 response = input("Continue with high gas price? (y/N): ")
                 if response.lower() != 'y':
                     return False
 
-            logger.info(f"✅ Gas price: {gas_price_gwei:.1f} gwei")
+            logger.info(f"[SUCCESS] Gas price: {gas_price_gwei:.1f} gwei")
 
             return True
 
         except Exception as e:
-            logger.error(f"❌ Pre-deployment check failed: {e}")
+            logger.error(f"[ERROR] Pre-deployment check failed: {e}")
             return False
 
     async def _check_compiled_contracts(self) -> bool:
         """Check if contracts are compiled"""
         try:
             # Try to compile with Hardhat first
-            logger.info("🔨 Compiling contracts with Hardhat...")
+            logger.info("[COMPILE] Compiling contracts with Hardhat...")
             result = subprocess.run(
                 ['npx', 'hardhat', 'compile'],
                 cwd=str(self.project_root),
@@ -230,26 +263,26 @@ class ContractDeployer:
             )
 
             if result.returncode == 0:
-                logger.success("✅ Contracts compiled successfully")
+                logger.info("[SUCCESS] Contracts compiled successfully")
                 return True
             else:
-                logger.error(f"❌ Compilation failed: {result.stderr}")
+                logger.error(f"[ERROR] Compilation failed: {result.stderr}")
                 return False
 
         except FileNotFoundError:
-            logger.warning("⚠️ Hardhat not found, checking for pre-compiled artifacts...")
+            logger.warning("[WARNING] Hardhat not found, checking for pre-compiled artifacts...")
 
             # Check if artifacts exist
             flashloan_artifact = self.artifacts_dir / 'FlashloanArbitrage.sol' / 'FlashloanArbitrage.json'
             if flashloan_artifact.exists():
-                logger.info("✅ Found pre-compiled artifacts")
+                logger.info("[SUCCESS] Found pre-compiled artifacts")
                 return True
 
-            logger.error("❌ No compiled contracts found")
+            logger.error("[ERROR] No compiled contracts found")
             return False
 
         except Exception as e:
-            logger.error(f"❌ Contract compilation check failed: {e}")
+            logger.error(f"[ERROR] Contract compilation check failed: {e}")
             return False
 
     async def _load_contract_artifacts(self, contract_name: str) -> Optional[Dict]:
@@ -258,24 +291,24 @@ class ContractDeployer:
             artifact_path = self.artifacts_dir / f'{contract_name}.sol' / f'{contract_name}.json'
 
             if not artifact_path.exists():
-                logger.error(f"❌ Contract artifact not found: {artifact_path}")
+                logger.error(f"[ERROR] Contract artifact not found: {artifact_path}")
                 return None
 
             with open(artifact_path, 'r') as f:
                 artifact = json.load(f)
 
-            logger.info(f"✅ Loaded {contract_name} artifacts")
+            logger.info(f"[SUCCESS] Loaded {contract_name} artifacts")
             return artifact
 
         except Exception as e:
-            logger.error(f"❌ Failed to load contract artifacts: {e}")
+            logger.error(f"[ERROR] Failed to load contract artifacts: {e}")
             return None
 
     async def _deploy_contract(self, contract_data: Dict, constructor_args: list,
                                contract_name: str) -> DeploymentResult:
         """Deploy a smart contract"""
         try:
-            logger.info(f"🚀 Deploying {contract_name}...")
+            logger.info(f"[DEPLOY] Deploying {contract_name}...")
 
             # Create contract instance
             contract = self.web3.eth.contract(
@@ -285,20 +318,20 @@ class ContractDeployer:
 
             # Estimate gas
             try:
-                gas_estimate = contract.constructor(*constructor_args).estimateGas({
+                gas_estimate = contract.constructor(*constructor_args).estimate_gas({
                     'from': self.account.address
                 })
                 gas_limit = int(gas_estimate * 1.2)  # Add 20% buffer
-                logger.info(f"📊 Gas estimate: {gas_estimate:,} (using {gas_limit:,})")
+                logger.info(f"[GAS] Gas estimate: {gas_estimate:,} (using {gas_limit:,})")
             except Exception as e:
-                logger.warning(f"⚠️ Gas estimation failed: {e}, using default limit")
+                logger.warning(f"[WARNING] Gas estimation failed: {e}, using default limit")
                 gas_limit = self.settings.trading.max_gas_limit
 
             # Get current gas price
             gas_price = self.web3.eth.gas_price
 
             # Build transaction
-            transaction = contract.constructor(*constructor_args).buildTransaction({
+            transaction = contract.constructor(*constructor_args).build_transaction({
                 'from': self.account.address,
                 'gas': gas_limit,
                 'gasPrice': gas_price,
@@ -309,10 +342,10 @@ class ContractDeployer:
             signed_txn = self.account.sign_transaction(transaction)
 
             # Send transaction
-            logger.info("📤 Sending deployment transaction...")
+            logger.info("[TX] Sending deployment transaction...")
             tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
 
-            logger.info(f"⏳ Waiting for transaction confirmation: {tx_hash.hex()}")
+            logger.info(f"[WAIT] Waiting for transaction confirmation: {tx_hash.hex()}")
 
             # Wait for confirmation
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash, timeout=600)  # 10 minutes timeout
@@ -322,10 +355,10 @@ class ContractDeployer:
                 gas_used = receipt.gasUsed
                 deployment_cost = Decimal(str(gas_used * gas_price)) / Decimal("1e18")
 
-                logger.success(f"✅ {contract_name} deployed successfully!")
-                logger.info(f"📍 Contract address: {receipt.contractAddress}")
-                logger.info(f"⛽ Gas used: {gas_used:,}")
-                logger.info(f"💰 Deployment cost: {deployment_cost:.6f} MATIC")
+                logger.info(f"[SUCCESS] {contract_name} deployed successfully!")
+                logger.info(f"[ADDR] Contract address: {receipt.contractAddress}")
+                logger.info(f"[GAS] Gas used: {gas_used:,}")
+                logger.info(f"[COST] Deployment cost: {deployment_cost:.6f} MATIC")
 
                 return DeploymentResult(
                     success=True,
@@ -335,7 +368,7 @@ class ContractDeployer:
                     deployment_cost=deployment_cost
                 )
             else:
-                logger.error(f"❌ Deployment transaction failed")
+                logger.error(f"[ERROR] Deployment transaction failed")
                 return DeploymentResult(
                     success=False,
                     transaction_hash=tx_hash.hex(),
@@ -343,7 +376,7 @@ class ContractDeployer:
                 )
 
         except Exception as e:
-            logger.error(f"❌ Contract deployment failed: {e}")
+            logger.error(f"[ERROR] Contract deployment failed: {e}")
             return DeploymentResult(
                 success=False,
                 error_message=str(e)
@@ -353,7 +386,7 @@ class ContractDeployer:
                                contract_name: str) -> str:
         """Verify contract on block explorer"""
         try:
-            logger.info(f"🔍 Verifying {contract_name} on block explorer...")
+            logger.info(f"[VERIFY] Verifying {contract_name} on block explorer...")
 
             # Use Hardhat verify plugin
             verify_command = [
@@ -371,23 +404,23 @@ class ContractDeployer:
             )
 
             if result.returncode == 0:
-                logger.success(f"✅ Contract verified successfully")
+                logger.info(f"[SUCCESS] Contract verified successfully")
                 return "SUCCESS"
             else:
-                logger.warning(f"⚠️ Verification failed: {result.stderr}")
+                logger.warning(f"[WARNING] Verification failed: {result.stderr}")
                 return "FAILED"
 
         except subprocess.TimeoutExpired:
-            logger.warning("⚠️ Contract verification timed out")
+            logger.warning("[WARNING] Contract verification timed out")
             return "TIMEOUT"
         except Exception as e:
-            logger.warning(f"⚠️ Contract verification error: {e}")
+            logger.warning(f"[WARNING] Contract verification error: {e}")
             return "ERROR"
 
     async def _test_deployed_contract(self, contract_address: str) -> bool:
         """Test basic functionality of deployed contract"""
         try:
-            logger.info("🧪 Testing deployed contract...")
+            logger.info("[TEST] Testing deployed contract...")
 
             # Load contract ABI
             contract_data = await self._load_contract_artifacts("FlashloanArbitrage")
@@ -404,25 +437,25 @@ class ContractDeployer:
             try:
                 owner = contract.functions.owner().call()
                 if owner.lower() != self.account.address.lower():
-                    logger.error(f"❌ Owner mismatch: expected {self.account.address}, got {owner}")
+                    logger.error(f"[ERROR] Owner mismatch: expected {self.account.address}, got {owner}")
                     return False
-                logger.info(f"✅ Owner check passed: {owner}")
+                logger.info(f"[SUCCESS] Owner check passed: {owner}")
             except Exception as e:
-                logger.warning(f"⚠️ Owner check failed: {e}")
+                logger.warning(f"[WARNING] Owner check failed: {e}")
 
             # Test 2: Check Aave pool address
             try:
                 aave_pool = contract.functions.AAVE_POOL().call()
-                logger.info(f"✅ Aave pool configured: {aave_pool}")
+                logger.info(f"[SUCCESS] Aave pool configured: {aave_pool}")
             except Exception as e:
-                logger.warning(f"⚠️ Aave pool check failed: {e}")
+                logger.warning(f"[WARNING] Aave pool check failed: {e}")
 
             # Test 3: Check if contract can receive Ether
             try:
                 # Small test transaction
                 test_tx = {
                     'to': contract_address,
-                    'value': self.web3.toWei(0.001, 'ether'),  # Send 0.001 MATIC
+                    'value': self.web3.to_wei(0.001, 'ether'),  # Send 0.001 MATIC
                     'gas': 21000,
                     'gasPrice': self.web3.eth.gas_price,
                     'nonce': self.web3.eth.get_transaction_count(self.account.address)
@@ -433,25 +466,25 @@ class ContractDeployer:
                 receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
 
                 if receipt.status == 1:
-                    logger.info("✅ Contract can receive Ether")
+                    logger.info("[SUCCESS] Contract can receive Ether")
                 else:
-                    logger.warning("⚠️ Contract cannot receive Ether")
+                    logger.warning("[WARNING] Contract cannot receive Ether")
 
             except Exception as e:
-                logger.warning(f"⚠️ Ether receive test failed: {e}")
+                logger.warning(f"[WARNING] Ether receive test failed: {e}")
 
-            logger.success("✅ Basic contract tests completed")
+            logger.info("[SUCCESS] Basic contract tests completed")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Contract testing failed: {e}")
+            logger.error(f"[ERROR] Contract testing failed: {e}")
             return False
 
     async def deploy_all_contracts(self) -> Dict[str, DeploymentResult]:
         """Deploy all required contracts"""
         results = {}
 
-        logger.info("🚀 Starting full contract deployment...")
+        logger.info("[START] Starting full contract deployment...")
 
         # Deploy main FlashloanArbitrage contract
         results['flashloan_arbitrage'] = await self.deploy_flashloan_contract()
@@ -463,13 +496,13 @@ class ContractDeployer:
         successful = sum(1 for result in results.values() if result.success)
         total = len(results)
 
-        logger.info(f"📊 Deployment Summary: {successful}/{total} contracts deployed successfully")
+        logger.info(f"[SUMMARY] Deployment Summary: {successful}/{total} contracts deployed successfully")
 
         for name, result in results.items():
             if result.success:
-                logger.success(f"✅ {name}: {result.contract_address}")
+                logger.info(f"[SUCCESS] {name}: {result.contract_address}")
             else:
-                logger.error(f"❌ {name}: {result.error_message}")
+                logger.error(f"[ERROR] {name}: {result.error_message}")
 
         return results
 
@@ -497,7 +530,7 @@ async def main():
             settings.security.enable_contract_verification = False
 
         if args.dry_run:
-            logger.warning("🔶 DRY RUN MODE - No contracts will be deployed")
+            logger.warning("[DRY-RUN] DRY RUN MODE - No contracts will be deployed")
             settings.security.dry_run_mode = True
 
         # Create deployer
@@ -505,17 +538,17 @@ async def main():
 
         # Pre-deployment confirmation
         if not args.dry_run:
-            logger.info("⚠️ DEPLOYING TO LIVE NETWORK ⚠️")
+            logger.info("[WARNING] DEPLOYING TO LIVE NETWORK")
             logger.info(f"Network: {settings.network.name}")
             logger.info(f"Account: {deployer.account.address}")
 
             balance = deployer.web3.eth.get_balance(deployer.account.address)
-            balance_ether = deployer.web3.fromWei(balance, 'ether')
+            balance_ether = deployer.web3.from_wei(balance, 'ether')
             logger.info(f"Balance: {balance_ether} MATIC")
 
             response = input("\nProceed with deployment? (y/N): ")
             if response.lower() != 'y':
-                logger.info("🛑 Deployment cancelled")
+                logger.info("[CANCELLED] Deployment cancelled")
                 return
 
         # Deploy contracts
@@ -523,7 +556,7 @@ async def main():
 
         # Final status
         if all(result.success for result in results.values()):
-            logger.success("🎉 All contracts deployed successfully!")
+            logger.info("[SUCCESS] All contracts deployed successfully!")
 
             # Save deployment info
             deployment_info = {
@@ -547,17 +580,17 @@ async def main():
             with open(deployment_file, 'w') as f:
                 json.dump(deployment_info, f, indent=2)
 
-            logger.info(f"📄 Deployment info saved to: {deployment_file}")
+            logger.info(f"[SAVED] Deployment info saved to: {deployment_file}")
 
         else:
-            logger.error("❌ Some contracts failed to deploy")
+            logger.error("[ERROR] Some contracts failed to deploy")
             sys.exit(1)
 
     except KeyboardInterrupt:
-        logger.info("🛑 Deployment interrupted by user")
+        logger.info("[CANCELLED] Deployment interrupted by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"💥 Deployment failed: {e}")
+        logger.error(f"[FATAL] Deployment failed: {e}")
         sys.exit(1)
 
 
