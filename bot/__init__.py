@@ -20,7 +20,7 @@ __version__ = "1.0.0"
 __author__ = "Flashloan Arbitrage Bot Team"
 
 # Core components
-from .arbitrage_bot import ArbitrageBot
+from .arbitrage_bot import FlashloanArbitrageBot as ArbitrageBot
 from .opportunity_scanner import OpportunityScanner
 from .risk_manager import RiskManager
 from .contract_interface import ContractInterface

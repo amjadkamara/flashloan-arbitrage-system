@@ -63,7 +63,7 @@ class RiskManager:
         self.web3 = web3
 
         # Risk Configuration
-        self.max_position_size = Decimal(str(settings.MAX_FLASHLOAN_AMOUNT))
+        self.max_position_size = Decimal(str(settings.trading.max_flashloan_amount))
         self.daily_volume_limit = Decimal("100000")  # $100k daily limit
         self.max_consecutive_failures = 5
         self.min_profit_threshold = Decimal("0.005")  # 0.5% minimum profit

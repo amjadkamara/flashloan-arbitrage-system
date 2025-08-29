@@ -67,7 +67,7 @@ class ContractInterface:
     def _setup_web3(self) -> None:
         """Setup Web3 connection to Polygon network."""
         try:
-            self.w3 = Web3(Web3.HTTPProvider(self.settings.POLYGON_RPC_URL))
+            self.w3 = Web3(Web3.HTTPProvider(self.settings.network.rpc_url))
 
             # Verify connection
             if not self.w3.is_connected():
@@ -75,7 +75,7 @@ class ContractInterface:
 
             # Set default account for gas estimation
             self.w3.eth.default_account = self.w3.to_checksum_address(
-                Account.from_key(self.settings.PRIVATE_KEY).address
+                Account.from_key(self.settings.security.private_key).address
             )
 
             logger.info("Web3 connection established")
@@ -87,7 +87,7 @@ class ContractInterface:
     def _setup_account(self) -> None:
         """Setup the trading account from private key."""
         try:
-            self.account = Account.from_key(self.settings.PRIVATE_KEY)
+            self.account = Account.from_key(self.settings.security.private_key)
             logger.info(f"Account loaded: {self.account.address}")
 
             # Check account balance
@@ -220,7 +220,7 @@ class ContractInterface:
                 return None
 
             # Sign and send transaction
-            signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.PRIVATE_KEY)
+            signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
 
             logger.info(f"Transaction sent: {tx_hash.hex()}")
@@ -370,7 +370,7 @@ class ContractInterface:
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
             })
 
-            signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.PRIVATE_KEY)
+            signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
 
             result = self._wait_for_confirmation(tx_hash)
@@ -394,7 +394,7 @@ class ContractInterface:
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
             })
 
-            signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.PRIVATE_KEY)
+            signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
 
             result = self._wait_for_confirmation(tx_hash)

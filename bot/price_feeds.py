@@ -25,7 +25,7 @@ from web3 import Web3
 from web3.contract import Contract
 
 from config.settings import Settings
-from config.addresses import POLYGON_ADDRESSES
+from config.addresses import POLYGON_ADDRESSES, DEX_ADDRESSES
 from .utils.helpers import format_amount, calculate_slippage
 from .utils.logger import setup_logger
 
@@ -97,8 +97,8 @@ class PriceFeeds:
         self.cache_duration = 30  # Cache prices for 30 seconds
 
         # Supported tokens
-        self.supported_tokens = POLYGON_ADDRESSES['TOKENS']
-        self.dex_routers = POLYGON_ADDRESSES['DEX_ROUTERS']
+        self.supported_tokens = POLYGON_ADDRESSES
+        self.dex_routers = DEX_ADDRESSES
 
         # Session for HTTP requests
         self.session = None
@@ -111,7 +111,7 @@ class PriceFeeds:
         self.session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=30),
             headers={
-                'Authorization': f'Bearer {self.settings.ONEINCH_API_KEY}',
+                'Authorization': f'Bearer {self.settings.api.oneinch_api_key}',
                 'Content-Type': 'application/json'
             }
         )
@@ -300,7 +300,7 @@ class PriceFeeds:
                         estimated_profit = amount_out_sell - amount - gas_cost
 
                         # Check if profitable
-                        if profit_pct >= self.settings.MIN_PROFIT_PERCENTAGE and estimated_profit > 0:
+                        if profit_pct >= self.settings.trading.min_profit_threshold and estimated_profit > 0:
                             opportunity = ArbitrageOpportunity(
                                 token_in=token_in,
                                 token_out=token_out,
@@ -421,7 +421,7 @@ class PriceFeeds:
                     logger.debug("No arbitrage opportunities found")
 
                 # Wait before next check
-                await asyncio.sleep(self.settings.PRICE_CHECK_INTERVAL)
+                await asyncio.sleep(10)
 
             except Exception as e:
                 logger.error(f"Error in price monitoring: {e}")
@@ -486,7 +486,7 @@ class PriceFeeds:
                 'src': token_in,
                 'dst': token_out,
                 'amount': str(amount),
-                'from': from_address or self.settings.CONTRACT_ADDRESS,
+                'from': from_address or '',
                 'slippage': str(slippage),
                 'disableEstimate': 'false'
             }
@@ -536,7 +536,7 @@ class PriceFeeds:
             # Check if profit is still above threshold
             current_profit_pct = (current_best_sell.price - current_best_buy.price) / current_best_buy.price * 100
 
-            if current_profit_pct >= self.settings.MIN_PROFIT_PERCENTAGE:
+            if current_profit_pct >= self.settings.trading.min_profit_threshold:
                 logger.info(f"Opportunity validated: {current_profit_pct:.2f}% profit")
                 return True
             else:
@@ -567,8 +567,8 @@ class PriceFeeds:
         amounts_wei = []
 
         for amount_matic in base_amounts:
-            if (self.settings.MIN_TRADE_AMOUNT <= amount_matic <=
-                    self.settings.MAX_TRADE_AMOUNT):
+            if (100 <= amount_matic <=
+                    self.settings.trading.max_trade_size):
                 amounts_wei.append(self.w3.to_wei(amount_matic, 'ether'))
 
         logger.info(f"Testing {len(amounts_wei)} different trade amounts")

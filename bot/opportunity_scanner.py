@@ -72,8 +72,8 @@ class OpportunityScanner:
         self.w3 = w3
 
         # Scanner configuration
-        self.scan_interval = self.settings.PRICE_CHECK_INTERVAL
-        self.min_profit_threshold = self.settings.MIN_PROFIT_PERCENTAGE
+        self.scan_interval = 10
+        self.min_profit_threshold = self.settings.trading.min_profit_threshold
         self.max_opportunities_per_scan = 10
 
         # Tracking and metrics
@@ -209,7 +209,7 @@ class OpportunityScanner:
 
             # Trade amount limits check
             amount_matic = self.w3.from_wei(opportunity.amount, 'ether')
-            if not (self.settings.MIN_TRADE_AMOUNT <= amount_matic <= self.settings.MAX_TRADE_AMOUNT):
+            if not (Decimal("100") <= amount_matic <= self.settings.trading.max_trade_size):
                 continue
 
             # Duplicate/cooldown check

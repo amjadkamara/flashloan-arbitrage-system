@@ -101,7 +101,7 @@ class NotificationManager:
 
     def __init__(self, config: Optional[NotificationConfig] = None):
         self.config = config or NotificationConfig()
-        self.rate_limiter = AlertRateLimiter(self.config.max_alerts_per_hour)
+        self.rate_limiter = AlertRateLimiter(10)
         self.session = None  # Will be initialized when needed
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -125,7 +125,7 @@ class NotificationManager:
     ):
         """Send profit alert to all enabled channels."""
 
-        if profit_percent < self.config.min_profit_alert:
+        if profit_percent < 0.0:
             return
 
         if not self.rate_limiter.can_send_alert("profit"):
@@ -155,7 +155,7 @@ class NotificationManager:
     ):
         """Send opportunity detection alert."""
 
-        if profit_percent < self.config.min_profit_alert:
+        if profit_percent < 0.0:
             return
 
         if not self.rate_limiter.can_send_alert("opportunity"):
@@ -207,15 +207,15 @@ class NotificationManager:
     def _send_to_all_channels(self, title: str, message: str, color: int = 0x0080FF):
         """Send message to all enabled notification channels."""
 
-        for channel in self.config.enabled_channels:
+        for channel in ['discord', 'telegram']:
             try:
-                if channel == "discord" and self.config.discord_webhook_url:
+                if channel == "discord" and '':
                     asyncio.create_task(self._send_discord(title, message, color))
-                elif channel == "telegram" and self.config.telegram_bot_token:
+                elif channel == "telegram" and '':
                     asyncio.create_task(self._send_telegram(title, message))
-                elif channel == "slack" and self.config.slack_webhook_url:
+                elif channel == "slack" and '':
                     asyncio.create_task(self._send_slack(title, message))
-                elif channel == "email" and self.config.smtp_server:
+                elif channel == "email" and '':
                     self._send_email(title, message)
             except Exception as e:
                 logger.error(f"Failed to send {channel} notification: {e}")
@@ -235,16 +235,16 @@ class NotificationManager:
             }
 
             payload = {
-                "username": self.config.discord_username,
+                "username": 'Flashloan Bot',
                 "embeds": [embed]
             }
 
-            if self.config.discord_avatar_url:
-                payload["avatar_url"] = self.config.discord_avatar_url
+            if '':
+                payload["avatar_url"] = ''
 
             session = await self._get_session()
             async with session.post(
-                    self.config.discord_webhook_url,
+                    '',
                     json=payload,
                     timeout=10
             ) as response:
@@ -262,7 +262,7 @@ class NotificationManager:
         try:
             full_message = f"*{title}*\n\n{message}"
 
-            url = f"https://api.telegram.org/bot{self.config.telegram_bot_token}/sendMessage"
+            url = f"https://api.telegram.org/bot{''}/sendMessage"
             payload = {
                 "chat_id": self.config.telegram_chat_id,
                 "text": full_message,
@@ -292,7 +292,7 @@ class NotificationManager:
 
             session = await self._get_session()
             async with session.post(
-                    self.config.slack_webhook_url,
+                    '',
                     json=payload,
                     timeout=10
             ) as response:
@@ -316,7 +316,7 @@ class NotificationManager:
             plain_message = message.replace("**", "").replace("*", "").replace("`", "")
             msg.attach(MIMEText(plain_message, 'plain'))
 
-            server = smtplib.SMTP(self.config.smtp_server, self.config.smtp_port)
+            server = smtplib.SMTP('', self.config.smtp_port)
             server.starttls()
             server.login(self.config.smtp_username, self.config.smtp_password)
 

@@ -876,3 +876,43 @@ class RateLimiter:
         oldest_call = min(self.calls)
         wait_time = self.time_window - (time.time() - oldest_call)
         return max(0, wait_time)
+def calculate_profit_percentage(buy_price: float, sell_price: float, gas_cost: float = 0.0) -> float:
+    """
+    Calculate profit percentage after accounting for gas costs
+    
+    Args:
+        buy_price: Price when buying
+        sell_price: Price when selling  
+        gas_cost: Gas cost in the same currency
+    
+    Returns:
+        Profit percentage (can be negative)
+    """
+    if buy_price <= 0:
+        return 0.0
+    
+    revenue = sell_price - buy_price - gas_cost
+    return (revenue / buy_price) * 100.0
+
+def get_token_decimals(token_address: str, default: int = 18) -> int:
+    """
+    Get token decimals for a given token address.
+    
+    Args:
+        token_address: Token contract address
+        default: Default decimals if not found
+    
+    Returns:
+        Number of decimals for the token
+    """
+    # Common token decimals (you can expand this list)
+    common_tokens = {
+        "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174": 6,  # USDC
+        "0xc2132D05D31c914a87C6611C10748AEb04B58e8F": 6,  # USDT
+        "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063": 18, # DAI
+        "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270": 18, # WMATIC
+        "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619": 18, # WETH
+        "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6": 8,  # WBTC
+    }
+    
+    return common_tokens.get(token_address.lower(), default)

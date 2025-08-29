@@ -43,17 +43,17 @@ class FlashloanArbitrageBot:
         self.paused = False
 
         # Initialize Web3
-        self.web3 = Web3(Web3.HTTPProvider(settings.RPC_URL))
+        self.web3 = Web3(Web3.HTTPProvider(settings.network.rpc_url))
         if not self.web3.is_connected():
             raise ConnectionError("❌ Failed to connect to Polygon network")
 
         logger.info(f"🌐 Connected to Polygon - Chain ID: {self.web3.eth.chain_id}")
 
         # Initialize components
-        self.price_feeds = PriceFeeds(settings)
-        self.contract_interface = ContractInterface(settings, self.web3)
+        self.price_feeds = PriceFeeds(settings, self.web3)
+        self.contract_interface = ContractInterface(settings)
         self.risk_manager = RiskManager(settings, self.web3)
-        self.opportunity_scanner = OpportunityScanner(settings, self.price_feeds)
+        self.opportunity_scanner = OpportunityScanner(settings, self.price_feeds, self.web3)
         self.notification_manager = NotificationManager(settings)
 
         # Performance tracking
@@ -70,9 +70,9 @@ class FlashloanArbitrageBot:
         """Log bot configuration"""
         config = {
             'network': 'Polygon',
-            'min_profit_threshold': f"{self.settings.MIN_PROFIT_THRESHOLD}%",
-            'max_position_size': f"${self.settings.MAX_FLASHLOAN_AMOUNT:,.2f}",
-            'scan_interval': f"{self.settings.SCAN_INTERVAL}s",
+            'min_profit_threshold': f"{self.settings.trading.min_profit_threshold}%",
+            'max_position_size': f"${self.settings.trading.max_flashloan_amount:,.2f}",
+            'scan_interval': f"{10}s",
             'risk_management': 'Enabled'
         }
         logger.info(f"⚙️ Bot Configuration: {config}")
@@ -87,7 +87,7 @@ class FlashloanArbitrageBot:
         self.start_time = time.time()
 
         logger.info("🚀 Starting Flashloan Arbitrage Bot...")
-        await self.notification_manager.send_notification(
+        await self.notification_manager.send_status_alert(
             "🚀 Arbitrage Bot Started",
             "Bot is now scanning for opportunities"
         )
@@ -102,7 +102,7 @@ class FlashloanArbitrageBot:
 
         except Exception as e:
             logger.error(f"❌ Bot startup failed: {e}")
-            await self.notification_manager.send_notification(
+            await self.notification_manager.send_status_alert(
                 "❌ Bot Startup Failed",
                 f"Error: {str(e)}"
             )
@@ -131,7 +131,7 @@ class FlashloanArbitrageBot:
         """Pause bot operations"""
         self.paused = True
         logger.info("⏸️ Bot paused")
-        await self.notification_manager.send_notification(
+        await self.notification_manager.send_status_alert(
             "⏸️ Bot Paused",
             "Bot operations temporarily paused"
         )
@@ -140,7 +140,7 @@ class FlashloanArbitrageBot:
         """Resume bot operations"""
         self.paused = False
         logger.info("▶️ Bot resumed")
-        await self.notification_manager.send_notification(
+        await self.notification_manager.send_status_alert(
             "▶️ Bot Resumed",
             "Bot operations resumed"
         )
@@ -155,7 +155,7 @@ class FlashloanArbitrageBot:
         # Stop bot
         await self.stop()
 
-        await self.notification_manager.send_notification(
+        await self.notification_manager.send_status_alert(
             "🚨 EMERGENCY STOP",
             "Bot stopped due to emergency condition"
         )
@@ -182,7 +182,7 @@ class FlashloanArbitrageBot:
                 self.total_opportunities_found += len(opportunities)
 
                 if not opportunities:
-                    await asyncio.sleep(self.settings.SCAN_INTERVAL)
+                    await asyncio.sleep(10)
                     continue
 
                 logger.info(f"🔍 Found {len(opportunities)} opportunities")
@@ -195,7 +195,7 @@ class FlashloanArbitrageBot:
                     await self._process_opportunity(opportunity)
 
                 # Wait before next scan
-                await asyncio.sleep(self.settings.SCAN_INTERVAL)
+                await asyncio.sleep(10)
 
             except KeyboardInterrupt:
                 logger.info("⌨️ Keyboard interrupt received")
@@ -299,7 +299,7 @@ class FlashloanArbitrageBot:
                 logger.info(f"✅ Trade successful! Profit: ${result.get('profit', 0):.2f}")
 
                 # Send success notification
-                await self.notification_manager.send_notification(
+                await self.notification_manager.send_status_alert(
                     "✅ Arbitrage Success!",
                     f"Profit: ${result.get('profit', 0):.2f}\nTx: {tx_hash}"
                 )
@@ -405,7 +405,7 @@ class FlashloanArbitrageBot:
 🌐 **Network Health:** {risk_metrics.get('network_health', 0):.1%}
 """
 
-            await self.notification_manager.send_notification(
+            await self.notification_manager.send_status_alert(
                 "📊 Session Report", report
             )
 
