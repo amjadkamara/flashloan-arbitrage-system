@@ -16,7 +16,6 @@ Usage:
     notifier.send_error_alert("Transaction failed", "0x123...")
 """
 
-import requests
 import smtplib
 import json
 from datetime import datetime
@@ -116,7 +115,7 @@ class NotificationManager:
             await self.session.close()
             self.session = None
 
-    def send_profit_alert(
+    async def send_profit_alert(
             self,
             token_pair: str,
             profit_percent: float,
@@ -142,9 +141,9 @@ class NotificationManager:
         if tx_hash:
             message += f"\n**Transaction:** `{tx_hash}`"
 
-        self._send_to_all_channels(title, message, color=0x00FF00)
+        await self._send_to_all_channels(title, message, color=0x00FF00)
 
-    def send_opportunity_alert(
+    async def send_opportunity_alert(
             self,
             token_pair: str,
             profit_percent: float,
@@ -169,9 +168,9 @@ class NotificationManager:
             f"**Sell to:** {sell_exchange} @ {sell_price:.6f}"
         )
 
-        self._send_to_all_channels(title, message, color=0xFFFF00)
+        await self._send_to_all_channels(title, message, color=0xFFFF00)
 
-    def send_error_alert(
+    async def send_error_alert(
             self,
             error_message: str,
             tx_hash: Optional[str] = None,
@@ -191,9 +190,9 @@ class NotificationManager:
         if additional_info:
             message += f"\n**Details:** {additional_info}"
 
-        self._send_to_all_channels(title, message, color=0xFF0000)
+        await self._send_to_all_channels(title, message, color=0xFF0000)
 
-    def send_status_alert(self, status: str, details: Optional[str] = None):
+    async def send_status_alert(self, status: str, details: Optional[str] = None):
         """Send bot status update."""
 
         title = "🤖 Bot Status"
@@ -202,23 +201,30 @@ class NotificationManager:
         if details:
             message += f"\n**Details:** {details}"
 
-        self._send_to_all_channels(title, message, color=0x0000FF)
-
-    def _send_to_all_channels(self, title: str, message: str, color: int = 0x0080FF):
+        return await self._send_to_all_channels(title, message, color=0x0000FF)
+    async def _send_to_all_channels(self, title: str, message: str, color: int = 0x0080FF):
         """Send message to all enabled notification channels."""
-
-        for channel in ['discord', 'telegram']:
+        
+        tasks = []
+        results = []
+        
+        # Create tasks for each enabled channel
+        if self.config.discord_webhook_url:
+            tasks.append(self._send_discord(title, message, color))
+        
+        if self.config.telegram_bot_token and self.config.telegram_chat_id:
+            tasks.append(self._send_telegram(title, message))
+        
+        # Run all tasks concurrently and collect results
+        if tasks:
             try:
-                if channel == "discord" and '':
-                    asyncio.create_task(self._send_discord(title, message, color))
-                elif channel == "telegram" and '':
-                    asyncio.create_task(self._send_telegram(title, message))
-                elif channel == "slack" and '':
-                    asyncio.create_task(self._send_slack(title, message))
-                elif channel == "email" and '':
-                    self._send_email(title, message)
+                results = await asyncio.gather(*tasks, return_exceptions=True)
             except Exception as e:
-                logger.error(f"Failed to send {channel} notification: {e}")
+                logger.error(f"Error sending notifications: {e}")
+                results = [e]
+        
+        return results
+        return results
 
     async def _send_discord(self, title: str, message: str, color: int):
         """Send Discord webhook notification."""
@@ -239,22 +245,25 @@ class NotificationManager:
                 "embeds": [embed]
             }
 
-            if '':
-                payload["avatar_url"] = ''
+            if self.config.discord_avatar_url:
+                payload["avatar_url"] = self.config.discord_avatar_url
 
             session = await self._get_session()
             async with session.post(
-                    '',
+                    self.config.discord_webhook_url,
                     json=payload,
                     timeout=10
             ) as response:
                 if response.status == 204:
                     logger.debug("Discord notification sent successfully")
+                    return True
                 else:
                     logger.error(f"Discord notification failed: {response.status}")
+                    return False
 
         except Exception as e:
             logger.error(f"Discord notification error: {e}")
+            return False
 
     async def _send_telegram(self, title: str, message: str):
         """Send Telegram bot message."""
@@ -262,7 +271,7 @@ class NotificationManager:
         try:
             full_message = f"*{title}*\n\n{message}"
 
-            url = f"https://api.telegram.org/bot{''}/sendMessage"
+            url = f"https://api.telegram.org/bot{self.config.telegram_bot_token}/sendMessage"
             payload = {
                 "chat_id": self.config.telegram_chat_id,
                 "text": full_message,
@@ -273,11 +282,14 @@ class NotificationManager:
             async with session.post(url, json=payload, timeout=10) as response:
                 if response.status == 200:
                     logger.debug("Telegram notification sent successfully")
+                    return True
                 else:
                     logger.error(f"Telegram notification failed: {response.status}")
+                    return False
 
         except Exception as e:
             logger.error(f"Telegram notification error: {e}")
+            return False
 
     async def _send_slack(self, title: str, message: str):
         """Send Slack webhook notification."""
@@ -292,17 +304,20 @@ class NotificationManager:
 
             session = await self._get_session()
             async with session.post(
-                    '',
+                    self.config.slack_webhook_url,
                     json=payload,
                     timeout=10
             ) as response:
                 if response.status == 200:
                     logger.debug("Slack notification sent successfully")
+                    return True
                 else:
                     logger.error(f"Slack notification failed: {response.status}")
+                    return False
 
         except Exception as e:
             logger.error(f"Slack notification error: {e}")
+            return False
 
     def _send_email(self, title: str, message: str):
         """Send email notification."""
@@ -316,7 +331,7 @@ class NotificationManager:
             plain_message = message.replace("**", "").replace("*", "").replace("`", "")
             msg.attach(MIMEText(plain_message, 'plain'))
 
-            server = smtplib.SMTP('', self.config.smtp_port)
+            server = smtplib.SMTP(self.config.smtp_server, self.config.smtp_port)
             server.starttls()
             server.login(self.config.smtp_username, self.config.smtp_password)
 
@@ -327,9 +342,11 @@ class NotificationManager:
 
             server.quit()
             logger.debug("Email notification sent successfully")
+            return True
 
         except Exception as e:
             logger.error(f"Email notification error: {e}")
+            return False
 
 
 # Convenience functions for direct usage
@@ -444,4 +461,3 @@ def test_notifications(config: NotificationConfig):
     )
 
     logger.info("Test notifications sent to all configured channels")
-# Alert system
