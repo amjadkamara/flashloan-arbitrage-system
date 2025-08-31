@@ -18,18 +18,18 @@ const REPORT_GAS = process.env.REPORT_GAS || false;
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
-    version: "0.8.19",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
-        details: {
-          yul: false,
-        },
+  version: "0.8.20",
+  settings: {
+    optimizer: {
+      enabled: true,
+      runs: 1000,  // Change from 200 to 1000
+      details: {
+        yul: true,  // Change from false to true
       },
-      viaIR: true,
     },
+    viaIR: true,
   },
+},
 
   networks: {
     // Local development network

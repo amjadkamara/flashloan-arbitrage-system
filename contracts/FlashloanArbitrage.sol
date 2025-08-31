@@ -1,12 +1,14 @@
-// ✅ Main arbitrage contract (created) 
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IPool} from "@aave/core-v3/contracts/interfaces/IPool.sol";
+import {IPoolAddressesProvider} from "@aave/core-v3/contracts/interfaces/IPoolAddressesProvider.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IFlashLoanReceiver} from "@aave/core-v3/contracts/flashloan/interfaces/IFlashLoanReceiver.sol";
 import "./interfaces/IAavePool.sol";
 import "./interfaces/I1InchRouter.sol";
 import "./interfaces/IDEX.sol";
@@ -23,8 +25,8 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
     // STATE VARIABLES
     // =============================================================================
 
-    /// @dev Aave V3 Pool contract
-    IAavePool public immutable AAVE_POOL;
+    IPoolAddressesProvider public immutable AAVE_ADDRESSES_PROVIDER;
+    IPool public immutable AAVE_POOL;
 
     /// @dev 1inch Router contract
     I1InchRouter public immutable ONEINCH_ROUTER;
@@ -152,23 +154,24 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
 
     /**
      * @dev Initialize the arbitrage contract
-     * @param _aavePool Address of Aave V3 Pool
+     * @param _aaveAddressesProvider Address of Aave V3 Addresses Provider
      * @param _oneinchRouter Address of 1inch Router
      * @param _wmatic Address of wrapped MATIC token
      * @param _initialExecutor Initial authorized executor address
      */
     constructor(
-        address _aavePool,
+        address _aaveAddressesProvider,
         address _oneinchRouter,
         address _wmatic,
         address _initialExecutor
-    ) {
-        require(_aavePool != address(0), "Invalid Aave pool address");
+    ) Ownable(msg.sender) {
+        require(_aaveAddressesProvider != address(0), "Invalid Aave addresses provider");
         require(_oneinchRouter != address(0), "Invalid 1inch router address");
         require(_wmatic != address(0), "Invalid WMATIC address");
         require(_initialExecutor != address(0), "Invalid executor address");
 
-        AAVE_POOL = IAavePool(_aavePool);
+        AAVE_ADDRESSES_PROVIDER = IPoolAddressesProvider(_aaveAddressesProvider);
+        AAVE_POOL = IPool(AAVE_ADDRESSES_PROVIDER.getPool());
         ONEINCH_ROUTER = I1InchRouter(_oneinchRouter);
         WMATIC = _wmatic;
 
@@ -312,7 +315,7 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
 
         // Approve flashloan repayment
         uint256 amountOwing = flashloanAmount + flashloanPremium;
-        IERC20(flashloanAsset).safeApprove(address(AAVE_POOL), amountOwing);
+        IERC20(flashloanAsset).safeIncreaseAllowance(address(AAVE_POOL), amountOwing);
 
         // Check if we have enough to repay
         uint256 balance = IERC20(flashloanAsset).balanceOf(address(this));
@@ -335,6 +338,20 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
         );
 
         return true;
+    }
+
+    /**
+     * @dev Required Aave interface function
+     */
+    function ADDRESSES_PROVIDER() external view returns (IPoolAddressesProvider) {
+        return AAVE_ADDRESSES_PROVIDER;
+    }
+
+    /**
+     * @dev Required Aave interface function
+     */
+    function POOL() external view returns (IPool) {
+        return AAVE_POOL;
     }
 
     /**
@@ -426,13 +443,12 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
         uint256 amountIn,
         bytes memory swapData
     ) internal {
-        IERC20(tokenIn).safeApprove(address(ONEINCH_ROUTER), amountIn);
+        IERC20(tokenIn).safeIncreaseAllowance(address(ONEINCH_ROUTER), amountIn);
 
         (bool success, bytes memory returnData) = address(ONEINCH_ROUTER).call(swapData);
         require(success, "1inch swap failed");
 
-        // Reset approval
-        IERC20(tokenIn).safeApprove(address(ONEINCH_ROUTER), 0);
+
     }
 
     /**
@@ -646,20 +662,6 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
     }
 
     /**
-     * @dev Batch function to execute multiple operations
-     * @param calls Array of encoded function calls
-     * @return results Array of call results
-     */
-    function batch(bytes[] calldata calls) external onlyOwner returns (bytes[] memory results) {
-        results = new bytes[](calls.length);
-        for (uint256 i = 0; i < calls.length; i++) {
-            (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
-            require(success, "Batch call failed");
-            results[i] = result;
-        }
-    }
-
-    /**
      * @dev Checks if arbitrage execution would be profitable
      * @param params Arbitrage parameters
      * @return profitable Whether execution would be profitable
@@ -723,7 +725,13 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
 
     /**
      * @dev Returns contract configuration
-     * @return config Current configuration parameters
+     * @return minProfitBasisPoints_ Minimum profit in basis points
+     * @return maxSlippageBasisPoints_ Maximum slippage in basis points
+     * @return maxGasPrice_ Maximum gas price
+     * @return ownerFeeBasisPoints_ Owner fee percentage
+     * @return aavePool_ Aave pool address
+     * @return oneinchRouter_ 1inch router address
+     * @return wmatic_ WMATIC address
      */
     function getConfiguration()
         external
@@ -757,138 +765,5 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
      */
     function version() external pure returns (string memory) {
         return "1.0.0";
-    }
-
-    /**
-     * @dev Implementation identifier for upgrades
-     * @return impl Implementation identifier
-     */
-    function implementation() external pure returns (string memory impl) {
-        impl = "FlashloanArbitrage_V1";
-    }
-}
-
-/**
- * @title FlashloanArbitrageFactory
- * @dev Factory contract for deploying FlashloanArbitrage instances
- */
-contract FlashloanArbitrageFactory {
-    event ArbitrageContractDeployed(
-        address indexed arbitrageContract,
-        address indexed owner,
-        address aavePool,
-        address oneinchRouter,
-        address wmatic
-    );
-
-    /**
-     * @dev Deploys a new FlashloanArbitrage contract
-     * @param aavePool Aave V3 Pool address
-     * @param oneinchRouter 1inch Router address
-     * @param wmatic WMATIC token address
-     * @param initialExecutor Initial executor address
-     * @return arbitrageContract Address of deployed contract
-     */
-    function deployArbitrageContract(
-        address aavePool,
-        address oneinchRouter,
-        address wmatic,
-        address initialExecutor
-    ) external returns (address arbitrageContract) {
-        arbitrageContract = address(
-            new FlashloanArbitrage(
-                aavePool,
-                oneinchRouter,
-                wmatic,
-                initialExecutor
-            )
-        );
-
-        // Transfer ownership to the caller
-        FlashloanArbitrage(arbitrageContract).transferOwnership(msg.sender);
-
-        emit ArbitrageContractDeployed(
-            arbitrageContract,
-            msg.sender,
-            aavePool,
-            oneinchRouter,
-            wmatic
-        );
-    }
-
-    /**
-     * @dev Calculates the address of a contract deployed with specific parameters
-     * @param aavePool Aave V3 Pool address
-     * @param oneinchRouter 1inch Router address
-     * @param wmatic WMATIC token address
-     * @param initialExecutor Initial executor address
-     * @param salt Salt for CREATE2 deployment
-     * @return predicted Predicted contract address
-     */
-    function predictAddress(
-        address aavePool,
-        address oneinchRouter,
-        address wmatic,
-        address initialExecutor,
-        bytes32 salt
-    ) external view returns (address predicted) {
-        bytes memory bytecode = abi.encodePacked(
-            type(FlashloanArbitrage).creationCode,
-            abi.encode(aavePool, oneinchRouter, wmatic, initialExecutor)
-        );
-
-        predicted = address(
-            uint160(
-                uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            bytes1(0xff),
-                            address(this),
-                            salt,
-                            keccak256(bytecode)
-                        )
-                    )
-                )
-            )
-        );
-    }
-
-    /**
-     * @dev Deploys contract using CREATE2 for deterministic addresses
-     * @param aavePool Aave V3 Pool address
-     * @param oneinchRouter 1inch Router address
-     * @param wmatic WMATIC token address
-     * @param initialExecutor Initial executor address
-     * @param salt Salt for CREATE2 deployment
-     * @return arbitrageContract Address of deployed contract
-     */
-    function deployArbitrageContractDeterministic(
-        address aavePool,
-        address oneinchRouter,
-        address wmatic,
-        address initialExecutor,
-        bytes32 salt
-    ) external returns (address arbitrageContract) {
-        bytes memory bytecode = abi.encodePacked(
-            type(FlashloanArbitrage).creationCode,
-            abi.encode(aavePool, oneinchRouter, wmatic, initialExecutor)
-        );
-
-        assembly {
-            arbitrageContract := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
-        }
-
-        require(arbitrageContract != address(0), "Deployment failed");
-
-        // Transfer ownership to the caller
-        FlashloanArbitrage(arbitrageContract).transferOwnership(msg.sender);
-
-        emit ArbitrageContractDeployed(
-            arbitrageContract,
-            msg.sender,
-            aavePool,
-            oneinchRouter,
-            wmatic
-        );
     }
 }
