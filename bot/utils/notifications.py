@@ -131,7 +131,7 @@ class NotificationManager:
             logger.warning("Profit alert rate limited")
             return
 
-        title = "🎯 Arbitrage Profit!"
+        title = "Arbitrage Profit!"
         message = (
             f"**Token Pair:** {token_pair}\n"
             f"**Profit:** {profit_percent:.2f}%\n"
@@ -160,7 +160,7 @@ class NotificationManager:
         if not self.rate_limiter.can_send_alert("opportunity"):
             return
 
-        title = "👀 Arbitrage Opportunity"
+        title = "Arbitrage Opportunity"
         message = (
             f"**Token Pair:** {token_pair}\n"
             f"**Potential Profit:** {profit_percent:.2f}%\n"
@@ -181,7 +181,7 @@ class NotificationManager:
         if not self.rate_limiter.can_send_alert("error"):
             return
 
-        title = "❌ Bot Error"
+        title = "Bot Error"
         message = f"**Error:** {error_message}"
 
         if tx_hash:
@@ -195,7 +195,7 @@ class NotificationManager:
     async def send_status_alert(self, status: str, details: Optional[str] = None):
         """Send bot status update."""
 
-        title = "🤖 Bot Status"
+        title = "Bot Status"
         message = f"**Status:** {status}"
 
         if details:
@@ -209,7 +209,7 @@ class NotificationManager:
         results = []
         
         # Create tasks for each enabled channel
-        if self.config.discord_webhook_url:
+        if hasattr(self.config, "discord_webhook_url") and self.config.discord_webhook_url:
             tasks.append(self._send_discord(title, message, color))
         
         if self.config.telegram_bot_token and self.config.telegram_chat_id:
@@ -245,20 +245,22 @@ class NotificationManager:
                 "embeds": [embed]
             }
 
-            if self.config.discord_avatar_url:
+            if self.config.discord_avatar_url and self.config.discord_avatar_url.startswith(("http://", "https://")):
                 payload["avatar_url"] = self.config.discord_avatar_url
 
             session = await self._get_session()
             async with session.post(
                     self.config.discord_webhook_url,
                     json=payload,
+                    headers={"Content-Type": "application/json"},
                     timeout=10
             ) as response:
+                response_text = await response.text()
                 if response.status == 204:
                     logger.debug("Discord notification sent successfully")
                     return True
                 else:
-                    logger.error(f"Discord notification failed: {response.status}")
+                    logger.error(f"Discord notification failed: {response.status} - {response_text}")
                     return False
 
         except Exception as e:
