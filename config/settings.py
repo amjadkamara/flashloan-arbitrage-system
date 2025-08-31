@@ -88,6 +88,8 @@ class MonitoringConfig:
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     discord_webhook_url: Optional[str] = None
+    discord_username: str = "Flashloan Bot"
+    discord_avatar_url: Optional[str] = None
     enable_notifications: bool = True
     notification_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     log_level: str = "INFO"
@@ -224,6 +226,8 @@ class Settings:
             telegram_bot_token=os.getenv('TELEGRAM_BOT_TOKEN'),
             telegram_chat_id=os.getenv('TELEGRAM_CHAT_ID'),
             discord_webhook_url=os.getenv('DISCORD_WEBHOOK_URL'),
+            discord_username=os.getenv("DISCORD_USERNAME", "Flashloan Bot"),
+            discord_avatar_url=os.getenv("DISCORD_AVATAR_URL"),
             enable_notifications=os.getenv('ENABLE_NOTIFICATIONS', 'true').lower() == 'true',
             notification_level=os.getenv('NOTIFICATION_LEVEL', 'INFO'),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),

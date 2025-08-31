@@ -47,14 +47,12 @@ class FlashloanArbitrageBot:
         if not self.web3.is_connected():
             raise ConnectionError("❌ Failed to connect to Polygon network")
 
-        logger.info(f"🌐 Connected to Polygon - Chain ID: {self.web3.eth.chain_id}")
 
         # Initialize components
         self.price_feeds = PriceFeeds(settings, self.web3)
         self.contract_interface = ContractInterface(settings)
-        self.risk_manager = RiskManager(settings, self.web3)
+        self.notification_manager = NotificationManager(settings.monitoring)
         self.opportunity_scanner = OpportunityScanner(settings, self.price_feeds, self.web3)
-        self.notification_manager = NotificationManager(settings)
 
         # Performance tracking
         self.start_time = None
@@ -95,7 +93,7 @@ class FlashloanArbitrageBot:
         try:
             # Initialize all components
             await self.price_feeds.start()
-            await self.contract_interface.initialize()
+                    # ContractInterface is already initialized in __init__
 
             # Start main trading loop
             await self._main_trading_loop()

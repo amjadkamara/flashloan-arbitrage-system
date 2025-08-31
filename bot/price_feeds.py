@@ -122,6 +122,11 @@ class PriceFeeds:
         if self.session:
             await self.session.close()
 
+
+    async def start(self):
+        """Start the price feeds (alternative to async context manager)"""
+        return await self.__aenter__()
+
     async def get_1inch_quote(
             self,
             token_in: str,
