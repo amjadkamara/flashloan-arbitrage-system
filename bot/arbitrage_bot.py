@@ -53,6 +53,7 @@ class FlashloanArbitrageBot:
         self.contract_interface = ContractInterface(settings)
         self.notification_manager = NotificationManager(settings.monitoring)
         self.opportunity_scanner = OpportunityScanner(settings, self.price_feeds, self.web3)
+        self.risk_manager = RiskManager(settings, self.web3)
 
         # Performance tracking
         self.start_time = None
