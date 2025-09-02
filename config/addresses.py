@@ -436,3 +436,6 @@ STABLECOINS = get_stablecoin_addresses()
 TRADING_PAIRS = get_priority_pairs_by_priority()
 DEX_ROUTERS = [config["router"] for config in DEX_CONFIG.values() if "router" in config]
 # Contract addresses
+
+# Deployed contract address
+CONTRACT_ADDRESS = '0x03A92c738A47Afc0A8c410B31D5475Ef28FAE2c8'
