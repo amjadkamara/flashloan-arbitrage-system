@@ -141,6 +141,14 @@ class Settings:
         self.dex = self._load_dex_config()
         self.security = self._load_security_config()
 
+        # ✅ Load contract address (fix for AttributeError)
+        self.CONTRACT_ADDRESS = os.getenv(
+            "CONTRACT_ADDRESS",
+            self.get_contract_address("FlashloanArbitrage")
+        )
+        if not self.CONTRACT_ADDRESS:
+            logger.warning("[WARNING] No CONTRACT_ADDRESS set in .env or addresses.py")
+
         # Validate configuration
         self._validate_configuration()
 
