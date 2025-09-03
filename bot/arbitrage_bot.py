@@ -1,7 +1,6 @@
-# Main bot orchestration 
 # bot/arbitrage_bot.py
 """
-Main Flashloan Arbitrage Bot - Updated Integration
+Main Flashloan Arbitrage Bot - Fixed Integration
 Orchestrates all components: scanning, risk management, and execution
 """
 
@@ -45,8 +44,7 @@ class FlashloanArbitrageBot:
         # Initialize Web3
         self.web3 = Web3(Web3.HTTPProvider(settings.network.rpc_url))
         if not self.web3.is_connected():
-            raise ConnectionError("❌ Failed to connect to Polygon network")
-
+            raise ConnectionError("Failed to connect to Polygon network")
 
         # Initialize components
         self.price_feeds = PriceFeeds(settings, self.web3)
@@ -62,7 +60,7 @@ class FlashloanArbitrageBot:
         self.total_successful_trades = 0
         self.total_profit = Decimal("0")
 
-        logger.info("🤖 Flashloan Arbitrage Bot initialized successfully")
+        logger.info("Flashloan Arbitrage Bot initialized successfully")
         self._log_configuration()
 
     def _log_configuration(self):
@@ -74,35 +72,52 @@ class FlashloanArbitrageBot:
             'scan_interval': f"{10}s",
             'risk_management': 'Enabled'
         }
-        logger.info(f"⚙️ Bot Configuration: {config}")
+        logger.info(f"Bot Configuration: {config}")
 
     async def start(self):
         """Start the arbitrage bot"""
         if self.running:
-            logger.warning("⚠️ Bot is already running")
+            logger.warning("Bot is already running")
             return
 
         self.running = True
         self.start_time = time.time()
 
-        logger.info("🚀 Starting Flashloan Arbitrage Bot...")
+        logger.info("Starting Flashloan Arbitrage Bot...")
         await self.notification_manager.send_status_alert(
-            "🚀 Arbitrage Bot Started",
+            "Arbitrage Bot Started",
             "Bot is now scanning for opportunities"
         )
 
         try:
-            # Initialize all components
-            await self.price_feeds.start()
-                    # ContractInterface is already initialized in __init__
+            # Validate all components are working
+            logger.info("Validating components...")
+
+            # Test price feeds
+            test_result = await self.price_feeds.test_price_feeds()
+            logger.info(f"Price feeds test: {test_result['overall_status']}")
+
+            # Test contract interface (basic connectivity test)
+            try:
+                # Try to get account balance from web3 directly
+                account = self.web3.eth.default_account or self.contract_interface.account
+                if account:
+                    balance_wei = self.web3.eth.get_balance(account)
+                    balance_matic = self.web3.from_wei(balance_wei, 'ether')
+                    logger.info(f"Contract interface ready - Account balance: {balance_matic:.4f} MATIC")
+                else:
+                    logger.info("Contract interface ready - No default account set")
+            except Exception as e:
+                logger.warning(f"Could not verify account balance: {e}")
+                logger.info("Contract interface loaded successfully")
 
             # Start main trading loop
             await self._main_trading_loop()
 
         except Exception as e:
-            logger.error(f"❌ Bot startup failed: {e}")
+            logger.error(f"Bot startup failed: {e}")
             await self.notification_manager.send_status_alert(
-                "❌ Bot Startup Failed",
+                "Bot Startup Failed",
                 f"Error: {str(e)}"
             )
             raise
@@ -115,38 +130,45 @@ class FlashloanArbitrageBot:
             return
 
         self.running = False
-        logger.info("🛑 Stopping Flashloan Arbitrage Bot...")
+        logger.info("Stopping Flashloan Arbitrage Bot...")
 
-        # Stop components
-        if hasattr(self.price_feeds, 'stop'):
-            await self.price_feeds.stop()
+        # Close HTTP sessions properly
+        try:
+            if hasattr(self.notification_manager, 'close'):
+                await self.notification_manager.close()
+
+            # Also try to close any sessions in price feeds
+            if hasattr(self.price_feeds, 'close') and callable(getattr(self.price_feeds, 'close')):
+                await self.price_feeds.close()
+        except Exception as e:
+            logger.warning(f"Error closing HTTP sessions: {e}")
 
         # Send final report
         await self._send_session_report()
 
-        logger.info("✅ Bot stopped successfully")
+        logger.info("Bot stopped successfully")
 
     async def pause(self):
         """Pause bot operations"""
         self.paused = True
-        logger.info("⏸️ Bot paused")
+        logger.info("Bot paused")
         await self.notification_manager.send_status_alert(
-            "⏸️ Bot Paused",
+            "Bot Paused",
             "Bot operations temporarily paused"
         )
 
     async def resume(self):
         """Resume bot operations"""
         self.paused = False
-        logger.info("▶️ Bot resumed")
+        logger.info("Bot resumed")
         await self.notification_manager.send_status_alert(
-            "▶️ Bot Resumed",
+            "Bot Resumed",
             "Bot operations resumed"
         )
 
     async def emergency_stop(self):
         """Emergency stop with risk manager integration"""
-        logger.error("🚨 EMERGENCY STOP TRIGGERED!")
+        logger.error("EMERGENCY STOP TRIGGERED!")
 
         # Stop risk manager
         self.risk_manager.emergency_stop()
@@ -155,13 +177,13 @@ class FlashloanArbitrageBot:
         await self.stop()
 
         await self.notification_manager.send_status_alert(
-            "🚨 EMERGENCY STOP",
+            "EMERGENCY STOP",
             "Bot stopped due to emergency condition"
         )
 
     async def _main_trading_loop(self):
         """Main trading loop - scan and execute opportunities"""
-        logger.info("🔄 Starting main trading loop...")
+        logger.info("Starting main trading loop...")
 
         while self.running:
             try:
@@ -172,19 +194,20 @@ class FlashloanArbitrageBot:
                 # Check risk manager status
                 risk_status = self.risk_manager.get_risk_status()
                 if risk_status['emergency_pause'] or risk_status['circuit_breaker_active']:
-                    logger.info("⏸️ Trading paused due to risk management")
+                    logger.info("Trading paused due to risk management")
                     await asyncio.sleep(30)
                     continue
 
-                # Scan for opportunities
-                opportunities = await self.opportunity_scanner.scan_for_opportunities()
+                # Scan for opportunities using price feeds directly
+                opportunities = await self._scan_for_opportunities()
                 self.total_opportunities_found += len(opportunities)
 
                 if not opportunities:
+                    logger.debug("No opportunities found")
                     await asyncio.sleep(10)
                     continue
 
-                logger.info(f"🔍 Found {len(opportunities)} opportunities")
+                logger.info(f"Found {len(opportunities)} opportunities")
 
                 # Process each opportunity
                 for opportunity in opportunities:
@@ -197,49 +220,142 @@ class FlashloanArbitrageBot:
                 await asyncio.sleep(10)
 
             except KeyboardInterrupt:
-                logger.info("⌨️ Keyboard interrupt received")
+                logger.info("Keyboard interrupt received")
                 break
             except Exception as e:
-                logger.error(f"❌ Error in main loop: {e}")
+                logger.error(f"Error in main loop: {e}")
                 await asyncio.sleep(10)  # Wait before retrying
+
+    async def _scan_for_opportunities(self):
+        """Scan for arbitrage opportunities using price feeds"""
+        try:
+            # Get supported token pairs
+            token_pairs = self.price_feeds.get_supported_token_pairs()[:5]  # Limit to first 5 pairs
+            trade_amounts = self.price_feeds.get_trade_amounts()
+
+            # Find arbitrage opportunities
+            opportunities = await self.price_feeds.find_arbitrage_opportunities(
+                token_pairs, trade_amounts
+            )
+
+            # Convert to format expected by the rest of the system
+            formatted_opportunities = []
+            for opp in opportunities:
+                formatted_opp = {
+                    'pair': f"{self._get_token_symbol(opp.token_in)}/{self._get_token_symbol(opp.token_out)}",
+                    'token_in': opp.token_in,
+                    'token_out': opp.token_out,
+                    'amount_in': str(opp.amount),
+                    'buy_dex': opp.buy_dex,
+                    'sell_dex': opp.sell_dex,
+                    'buy_price': float(opp.buy_price),
+                    'sell_price': float(opp.sell_price),
+                    'profit_percentage': float(opp.profit_percentage),
+                    'estimated_profit': opp.estimated_profit,
+                    'net_profit': opp.net_profit,
+                    'gas_cost': opp.gas_cost,
+                    'timestamp': opp.timestamp
+                }
+                formatted_opportunities.append(formatted_opp)
+
+            return formatted_opportunities
+
+        except Exception as e:
+            logger.error(f"Failed to scan for opportunities: {e}")
+            return []
+
+    def _get_token_symbol(self, token_address: str) -> str:
+        """Get token symbol from address"""
+        for symbol, address in self.price_feeds.token_addresses.items():
+            if address.lower() == token_address.lower():
+                return symbol
+        return token_address[:8] + "..."
 
     async def _process_opportunity(self, opportunity: Dict):
         """Process a single arbitrage opportunity"""
         try:
-            logger.info(f"📊 Processing opportunity: {opportunity.get('pair', 'Unknown')}")
+            logger.info(f"Processing opportunity: {opportunity.get('pair', 'Unknown')}")
 
-            # Step 1: Risk Assessment
+            # Step 1: Validate opportunity is still profitable
+            is_valid = await self._validate_opportunity(opportunity)
+            if not is_valid:
+                logger.warning("Opportunity is no longer valid")
+                return
+
+            # Step 2: Risk Assessment
             risk_assessment = await self.risk_manager.assess_trade_risk(opportunity)
 
             if not risk_assessment.is_safe:
-                logger.warning(f"🚫 Opportunity rejected due to risk: {risk_assessment.blockers}")
+                logger.warning(f"Opportunity rejected due to risk: {risk_assessment.blockers}")
                 return
 
             if risk_assessment.warnings:
-                logger.warning(f"⚠️ Proceeding with warnings: {risk_assessment.warnings}")
+                logger.warning(f"Proceeding with warnings: {risk_assessment.warnings}")
 
-            # Step 2: Prepare Trade Parameters
-            trade_params = await self._prepare_trade_parameters(opportunity, risk_assessment)
-            if not trade_params:
-                logger.error("❌ Failed to prepare trade parameters")
+            # Step 3: Check if dry run mode
+            if self.settings.safety.dry_run_mode:
+                logger.info(f"DRY RUN: Would execute trade with profit: {opportunity.get('profit_percentage', 0):.2f}%")
+                self.total_trades_attempted += 1
+                self.total_successful_trades += 1
+                profit = Decimal(str(opportunity.get('estimated_profit', 0))) / Decimal(
+                    '1000000')  # Convert from wei to USDC
+                self.total_profit += profit
+
+                await self.notification_manager.send_status_alert(
+                    "DRY RUN Trade Success",
+                    f"Profit: ${float(profit):.2f}\nPair: {opportunity.get('pair')}"
+                )
                 return
 
-            # Step 3: Execute Trade
-            logger.info(f"⚡ Executing arbitrage trade...")
+            # Step 4: Prepare Trade Parameters (for real execution)
+            trade_params = await self._prepare_trade_parameters(opportunity, risk_assessment)
+            if not trade_params:
+                logger.error("Failed to prepare trade parameters")
+                return
+
+            # Step 5: Execute Trade
+            logger.info(f"Executing arbitrage trade...")
             self.total_trades_attempted += 1
 
             success, result = await self._execute_arbitrage_trade(trade_params)
 
-            # Step 4: Record Results
+            # Step 6: Record Results
             await self._record_trade_result(opportunity, success, result)
 
         except Exception as e:
-            logger.error(f"❌ Error processing opportunity: {e}")
+            logger.error(f"Error processing opportunity: {e}")
             await self.risk_manager.record_trade_result(
                 opportunity,
                 False,
                 error=str(e)
             )
+
+    async def _validate_opportunity(self, opportunity: Dict) -> bool:
+        """Validate that an opportunity is still profitable"""
+        try:
+            # Create ArbitrageOpportunity object from dict
+            from bot.price_feeds import ArbitrageOpportunity
+            from decimal import Decimal
+
+            opp = ArbitrageOpportunity(
+                token_in=opportunity['token_in'],
+                token_out=opportunity['token_out'],
+                amount=int(float(opportunity['amount_in'])),
+                buy_dex=opportunity['buy_dex'],
+                sell_dex=opportunity['sell_dex'],
+                buy_price=Decimal(str(opportunity['buy_price'])),
+                sell_price=Decimal(str(opportunity['sell_price'])),
+                profit_percentage=Decimal(str(opportunity['profit_percentage'])),
+                estimated_profit=opportunity['estimated_profit'],
+                gas_cost=opportunity['gas_cost'],
+                net_profit=opportunity['net_profit']
+            )
+
+            return await self.price_feeds.validate_opportunity(opp)
+
+        except Exception as e:
+            logger.error(f"Opportunity validation failed: {e}")
+            return False
 
     async def _prepare_trade_parameters(self, opportunity: Dict, risk_assessment) -> Optional[Dict]:
         """Prepare parameters for trade execution"""
@@ -249,32 +365,22 @@ class FlashloanArbitrageBot:
             token_out = opportunity.get('token_out')
             amount_in = int(float(opportunity.get('amount_in', 0)))
 
-            # Get optimal swap routes
-            route_data = await self.price_feeds.get_swap_route(
-                token_in, token_out, amount_in
-            )
-
-            if not route_data:
-                logger.error("❌ Failed to get swap route")
-                return None
-
-            # Prepare trade parameters
+            # Prepare basic trade parameters
             trade_params = {
                 'flashloan_asset': token_in,
                 'flashloan_amount': amount_in,
-                'dex_buy': route_data.get('dex_buy'),
-                'dex_sell': route_data.get('dex_sell'),
-                'buy_calldata': route_data.get('buy_calldata'),
-                'sell_calldata': route_data.get('sell_calldata'),
-                'min_profit': int(float(risk_assessment.metrics.profit_threshold) * 1e6),  # Convert to wei
-                'gas_limit': route_data.get('gas_estimate', 500000),
+                'dex_buy': opportunity.get('buy_dex'),
+                'dex_sell': opportunity.get('sell_dex'),
+                'min_profit': int(float(opportunity.get('estimated_profit', 0)) * 0.95),  # 5% slippage tolerance
+                'gas_limit': opportunity.get('gas_cost', 500000),
                 'deadline': int(time.time() + 300)  # 5 minute deadline
             }
 
+            logger.info(f"Trade parameters prepared for {self._get_token_symbol(token_in)}")
             return trade_params
 
         except Exception as e:
-            logger.error(f"❌ Failed to prepare trade parameters: {e}")
+            logger.error(f"Failed to prepare trade parameters: {e}")
             return None
 
     async def _execute_arbitrage_trade(self, trade_params: Dict) -> tuple[bool, Optional[Dict]]:
@@ -284,10 +390,10 @@ class FlashloanArbitrageBot:
             tx_hash = await self.contract_interface.execute_arbitrage(trade_params)
 
             if not tx_hash:
-                logger.error("❌ Trade execution failed - no transaction hash")
+                logger.error("Trade execution failed - no transaction hash")
                 return False, None
 
-            logger.info(f"📝 Trade submitted: {tx_hash}")
+            logger.info(f"Trade submitted: {tx_hash}")
 
             # Wait for transaction confirmation
             receipt = await self.contract_interface.wait_for_confirmation(tx_hash)
@@ -295,36 +401,32 @@ class FlashloanArbitrageBot:
             if receipt and receipt.status == 1:
                 # Parse transaction results
                 result = await self._parse_trade_result(receipt)
-                logger.info(f"✅ Trade successful! Profit: ${result.get('profit', 0):.2f}")
+                logger.info(f"Trade successful! Profit: ${result.get('profit', 0):.2f}")
 
                 # Send success notification
                 await self.notification_manager.send_status_alert(
-                    "✅ Arbitrage Success!",
+                    "Arbitrage Success!",
                     f"Profit: ${result.get('profit', 0):.2f}\nTx: {tx_hash}"
                 )
 
                 return True, result
             else:
-                logger.error(f"❌ Trade failed - transaction reverted: {tx_hash}")
+                logger.error(f"Trade failed - transaction reverted: {tx_hash}")
                 return False, None
 
         except Exception as e:
-            logger.error(f"❌ Trade execution error: {e}")
+            logger.error(f"Trade execution error: {e}")
             return False, None
 
     async def _parse_trade_result(self, receipt) -> Dict:
         """Parse trade results from transaction receipt"""
         try:
-            # Parse logs to extract profit information
-            # This is simplified - in production, parse actual contract events
-
             gas_used = receipt.gasUsed
             gas_price = receipt.effectiveGasPrice
             gas_cost = gas_used * gas_price / 1e18  # Convert to ETH
             gas_cost_usd = gas_cost * 2000  # Approximate ETH price
 
             # For now, return basic information
-            # In production, parse actual profit from contract events
             return {
                 'gas_used': gas_used,
                 'gas_cost_usd': gas_cost_usd,
@@ -333,7 +435,7 @@ class FlashloanArbitrageBot:
             }
 
         except Exception as e:
-            logger.error(f"❌ Failed to parse trade result: {e}")
+            logger.error(f"Failed to parse trade result: {e}")
             return {'profit': 0.0, 'error': str(e)}
 
     async def _record_trade_result(self, opportunity: Dict, success: bool, result: Optional[Dict]):
@@ -358,7 +460,7 @@ class FlashloanArbitrageBot:
             self._log_performance_update()
 
         except Exception as e:
-            logger.error(f"❌ Failed to record trade result: {e}")
+            logger.error(f"Failed to record trade result: {e}")
 
     def _log_performance_update(self):
         """Log current performance metrics"""
@@ -369,7 +471,7 @@ class FlashloanArbitrageBot:
             success_rate = (self.total_successful_trades / self.total_trades_attempted * 100
                             if self.total_trades_attempted > 0 else 0)
 
-            logger.info(f"📈 Performance Update:")
+            logger.info(f"Performance Update:")
             logger.info(f"   Runtime: {runtime_hours:.1f}h")
             logger.info(f"   Opportunities: {self.total_opportunities_found}")
             logger.info(f"   Trades Attempted: {self.total_trades_attempted}")
@@ -392,24 +494,24 @@ class FlashloanArbitrageBot:
             risk_metrics = self.risk_manager.get_performance_metrics()
 
             report = f"""
-📊 **Trading Session Report**
+**Trading Session Report**
 
-⏱️ **Session Duration:** {runtime_hours:.1f} hours
-🔍 **Opportunities Found:** {self.total_opportunities_found}
-⚡ **Trades Attempted:** {self.total_trades_attempted}
-✅ **Successful Trades:** {self.total_successful_trades}
-📈 **Success Rate:** {success_rate:.1f}%
-💰 **Total Profit:** ${self.total_profit:.2f}
-🛡️ **Risk Score:** {risk_metrics.get('avg_risk_score', 0):.1f}/100
-🌐 **Network Health:** {risk_metrics.get('network_health', 0):.1%}
+**Session Duration:** {runtime_hours:.1f} hours
+**Opportunities Found:** {self.total_opportunities_found}
+**Trades Attempted:** {self.total_trades_attempted}
+**Successful Trades:** {self.total_successful_trades}
+**Success Rate:** {success_rate:.1f}%
+**Total Profit:** ${self.total_profit:.2f}
+**Risk Score:** {risk_metrics.get('avg_risk_score', 0):.1f}/100
+**Network Health:** {risk_metrics.get('network_health', 0):.1%}
 """
 
             await self.notification_manager.send_status_alert(
-                "📊 Session Report", report
+                "Session Report", report
             )
 
         except Exception as e:
-            logger.error(f"❌ Failed to send session report: {e}")
+            logger.error(f"Failed to send session report: {e}")
 
     # Status and Control Methods
     def get_status(self) -> Dict:
@@ -425,7 +527,6 @@ class FlashloanArbitrageBot:
             'successful_trades': self.total_successful_trades,
             'total_profit': str(self.total_profit),
             'risk_status': self.risk_manager.get_risk_status(),
-            'scanner_status': self.opportunity_scanner.get_status(),
             'network_connected': self.web3.is_connected()
         }
 
@@ -433,24 +534,22 @@ class FlashloanArbitrageBot:
         """Get detailed performance metrics"""
         status = self.get_status()
         risk_metrics = self.risk_manager.get_performance_metrics()
-        scanner_metrics = self.opportunity_scanner.get_performance_metrics()
 
         return {
             **status,
             'risk_metrics': risk_metrics,
-            'scanner_metrics': scanner_metrics,
-            'price_feed_status': await self.price_feeds.get_status()
+            'price_feed_status': await self.price_feeds.get_health_status()
         }
 
     # Manual Control Methods
     async def force_scan(self) -> List[Dict]:
         """Force a manual opportunity scan"""
-        logger.info("🔍 Forcing manual opportunity scan...")
-        return await self.opportunity_scanner.scan_for_opportunities()
+        logger.info("Forcing manual opportunity scan...")
+        return await self._scan_for_opportunities()
 
     async def test_opportunity(self, opportunity: Dict) -> Dict:
         """Test an opportunity without executing"""
-        logger.info(f"🧪 Testing opportunity: {opportunity.get('pair', 'Unknown')}")
+        logger.info(f"Testing opportunity: {opportunity.get('pair', 'Unknown')}")
 
         risk_assessment = await self.risk_manager.assess_trade_risk(opportunity)
         trade_params = await self._prepare_trade_parameters(opportunity, risk_assessment)
@@ -487,18 +586,29 @@ class FlashloanArbitrageBotManager:
 
 # Main execution function
 async def main():
-    """Main execution function for testing"""
+    """Main execution function"""
+    import argparse
     from config.settings import Settings
 
+    parser = argparse.ArgumentParser(description='Flashloan Arbitrage Bot')
+    parser.add_argument('--dry-run', action='store_true', help='Run in dry-run mode')
+    parser.add_argument('--log-level', default='INFO', help='Log level')
+    args = parser.parse_args()
+
     settings = Settings()
+
+    # Override settings based on arguments
+    if args.dry_run:
+        settings.security.dry_run_mode = True
+        logger.info("Running in DRY RUN mode - no real trades will be executed")
 
     async with FlashloanArbitrageBotManager(settings) as bot:
         try:
             await bot.start()
         except KeyboardInterrupt:
-            logger.info("⌨️ Bot stopped by user")
+            logger.info("Bot stopped by user")
         except Exception as e:
-            logger.error(f"❌ Bot error: {e}")
+            logger.error(f"Bot error: {e}")
 
 
 if __name__ == "__main__":
