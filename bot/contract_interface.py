@@ -19,7 +19,7 @@ from web3.contract import Contract
 from web3.exceptions import ContractLogicError, TransactionNotFound
 from eth_account import Account
 from eth_utils import to_checksum_address
-
+from web3.middleware import ExtraDataToPOAMiddleware
 from config.settings import Settings
 from config.addresses import POLYGON_ADDRESSES
 from .utils.helpers import format_amount, calculate_gas_price
@@ -68,6 +68,8 @@ class ContractInterface:
         """Setup Web3 connection to Polygon network."""
         try:
             self.w3 = Web3(Web3.HTTPProvider(self.settings.network.rpc_url))
+
+            self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
             # Verify connection
             if not self.w3.is_connected():
@@ -163,8 +165,10 @@ class ContractInterface:
             self,
             asset: str,
             amount: int,
-            dex_addresses: List[str],
-            swap_data: List[bytes],
+            buy_dex: str,
+            sell_dex: str,
+            buy_data: bytes,
+            sell_data: bytes,
             min_profit: int
     ) -> Optional[str]:
         """
@@ -173,8 +177,10 @@ class ContractInterface:
         Args:
             asset: Token address to borrow
             amount: Amount to borrow (in wei)
-            dex_addresses: List of DEX router addresses for swaps
-            swap_data: List of encoded swap data for each DEX
+            buy_dex: DEX router address for buying
+            sell_dex: DEX router address for selling
+            buy_data: Encoded swap data for buy DEX
+            sell_data: Encoded swap data for sell DEX
             min_profit: Minimum profit required (in wei)
 
         Returns:
@@ -184,15 +190,26 @@ class ContractInterface:
             logger.info(f"Executing arbitrage for {format_amount(amount, 18)} {asset[:8]}...")
 
             # Get current gas price
-            gas_price = calculate_gas_price(self.w3, self.settings.MAX_GAS_PRICE_GWEI)
+            gas_price = self.w3.to_wei(80, 'gwei')  # Use 80 gwei max
 
-            # Build transaction
+            # Create the struct parameter that matches the contract Based on your contract signature: (address,
+            # address,uint256,uint256,address,address,bytes,bytes,address,uint256)
+            arbitrage_params = (
+                to_checksum_address(asset),  # asset address
+                to_checksum_address(asset),  # repay asset (same as borrow asset)
+                amount,  # borrow amount
+                min_profit,  # minimum profit
+                to_checksum_address(buy_dex),  # buy DEX router
+                to_checksum_address(sell_dex),  # sell DEX router
+                buy_data,  # buy swap data
+                sell_data,  # sell swap data
+                self.account.address,  # recipient address
+                amount + min_profit  # repay amount (borrow + profit)
+            )
+
+            # Build transaction with struct parameter
             txn = self.flashloan_contract.functions.executeArbitrage(
-                asset,
-                amount,
-                dex_addresses,
-                swap_data,
-                min_profit
+                arbitrage_params
             ).build_transaction({
                 'from': self.account.address,
                 'gasPrice': gas_price,
@@ -366,7 +383,7 @@ class ContractInterface:
         try:
             txn = self.flashloan_contract.functions.pause().build_transaction({
                 'from': self.account.address,
-                'gasPrice': calculate_gas_price(self.w3, self.settings.MAX_GAS_PRICE_GWEI),
+                'gasPrice': self.w3.to_wei(80, 'gwei'),
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
             })
 

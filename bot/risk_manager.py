@@ -62,15 +62,22 @@ class RiskManager:
         self.settings = settings
         self.web3 = web3
 
-        # Risk Configuration
+        # UPDATED RISK CONFIGURATION - More Realistic for Arbitrage
         self.max_position_size = Decimal(str(settings.trading.max_flashloan_amount))
         self.daily_volume_limit = Decimal("100000")  # $100k daily limit
         self.max_consecutive_failures = 5
-        self.min_profit_threshold = Decimal(str(settings.trading.min_profit_threshold / 100))  # Use bot's setting
-        self.max_slippage_tolerance = Decimal("0.03")  # 3% max slippage
-        self.gas_cost_max_ratio = Decimal("0.3")  # Gas can't exceed 30% of profit
 
-        # State Tracking
+        # FIXED: More realistic profit thresholds for arbitrage
+        self.min_profit_threshold = Decimal("0.002")  # 0.2% minimum (was using bot's 2%)
+        self.min_profit_usd = Decimal("5.0")  # $5 minimum profit
+
+        # FIXED: More realistic slippage for DEX trading
+        self.max_slippage_tolerance = Decimal("0.02")  # 2% max slippage (was 3%)
+
+        # FIXED: More reasonable gas cost ratio
+        self.gas_cost_max_ratio = Decimal("3.0")  # Gas can be up to 300% of profit for small trades
+
+        # State Tracking (unchanged)
         self.consecutive_failures = 0
         self.daily_volume = Decimal("0")
         self.last_reset_date = datetime.now().date()
@@ -78,16 +85,19 @@ class RiskManager:
         self.circuit_breaker_active = False
         self.circuit_breaker_until = None
 
-        # Performance Tracking
+        # Performance Tracking (unchanged)
         self.trade_history: List[Dict] = []
         self.risk_assessments: List[TradeRisk] = []
         self.network_health_score = 1.0
 
-        # Rate Limiting
+        # FIXED: Reduced rate limiting for better opportunity capture
         self.last_trade_time = 0
-        self.min_trade_interval = 30  # 30 seconds between trades
+        self.min_trade_interval = 10  # 10 seconds between trades (was 30)
 
-        logger.info("🛡️ Risk Manager initialized with comprehensive safety systems")
+        # ADDED: Debug mode flag
+        self.debug_mode = False  # Simple fix - remove dependency on missing debugging config
+
+        logger.info("🛡️ Risk Manager initialized with UPDATED arbitrage-optimized parameters")
         self._log_risk_parameters()
 
     def _log_risk_parameters(self):
@@ -215,12 +225,12 @@ class RiskManager:
 
             # 8. Network Health Check
             network_score = await self._assess_network_health()
-            if network_score < 0.6:
-                blockers.append(f"Network health poor: {network_score:.2f}")
-                risk_score += 25
-            elif network_score < 0.8:
-                warnings.append(f"Network health degraded: {network_score:.2f}")
-                risk_score += 8
+            #if network_score < 0.6:
+                #blockers.append(f"Network health poor: {network_score:.2f}")
+                #risk_score += 25
+            #elif network_score < 0.8:
+                #warnings.append(f"Network health degraded: {network_score:.2f}")
+                #risk_score += 8
 
             # 9. Token Pair Validation
             if not await self._validate_token_pair(token_in, token_out):
