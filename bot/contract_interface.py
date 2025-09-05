@@ -1,11 +1,16 @@
 # Web3 contract interaction
 # bot/contract_interface.py
 """
-Contract Interface - Web3 Contract Interaction Layer
+Contract Interface - Web3 Contract Interaction Layer (FIXED)
 
 This module handles all interactions with the FlashloanArbitrage smart contract
 and other DeFi protocols on the Polygon network. It provides a clean interface
 for executing flashloan arbitrage trades and managing contract state.
+
+FIXES:
+- Fixed rawTransaction -> raw_transaction compatibility
+- Updated web3.py version compatibility
+- Enhanced error handling for transaction signing
 """
 
 import json
@@ -24,6 +29,7 @@ from config.settings import Settings
 from config.addresses import POLYGON_ADDRESSES
 from .utils.helpers import format_amount, calculate_gas_price
 from .utils.logger import setup_logger
+
 
 # Setup logging
 logger = setup_logger(__name__)
@@ -192,8 +198,7 @@ class ContractInterface:
             # Get current gas price
             gas_price = self.w3.to_wei(80, 'gwei')  # Use 80 gwei max
 
-            # Create the struct parameter that matches the contract Based on your contract signature: (address,
-            # address,uint256,uint256,address,address,bytes,bytes,address,uint256)
+            # Create the struct parameter that matches the contract
             arbitrage_params = (
                 to_checksum_address(asset),  # asset address
                 to_checksum_address(asset),  # repay asset (same as borrow asset)
@@ -236,9 +241,19 @@ class ContractInterface:
                 logger.warning("Trade not profitable after gas costs")
                 return None
 
-            # Sign and send transaction
+            # 🔧 FIXED: Sign and send transaction with proper attribute name
             signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+            # Check for both possible attribute names for web3.py version compatibility
+            if hasattr(signed_txn, 'raw_transaction'):
+                raw_transaction = signed_txn.raw_transaction  # v6+
+            elif hasattr(signed_txn, 'rawTransaction'):
+                raw_transaction = signed_txn.rawTransaction  # v5 and below
+            else:
+                logger.error("Unable to access raw transaction data - web3.py compatibility issue")
+                return None
+
+            tx_hash = self.w3.eth.send_raw_transaction(raw_transaction)
 
             logger.info(f"Transaction sent: {tx_hash.hex()}")
 
@@ -388,7 +403,14 @@ class ContractInterface:
             })
 
             signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+            # 🔧 FIXED: Handle both web3.py versions
+            if hasattr(signed_txn, 'raw_transaction'):
+                raw_transaction = signed_txn.raw_transaction
+            else:
+                raw_transaction = signed_txn.rawTransaction
+
+            tx_hash = self.w3.eth.send_raw_transaction(raw_transaction)
 
             result = self._wait_for_confirmation(tx_hash)
             if result:
@@ -412,7 +434,14 @@ class ContractInterface:
             })
 
             signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+            # 🔧 FIXED: Handle both web3.py versions
+            if hasattr(signed_txn, 'raw_transaction'):
+                raw_transaction = signed_txn.raw_transaction
+            else:
+                raw_transaction = signed_txn.rawTransaction
+
+            tx_hash = self.w3.eth.send_raw_transaction(raw_transaction)
 
             result = self._wait_for_confirmation(tx_hash)
             if result:

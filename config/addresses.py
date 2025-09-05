@@ -453,3 +453,6 @@ DEX_ROUTERS = [config["router"] for config in DEX_CONFIG.values() if "router" in
 
 # Deployed contract address
 CONTRACT_ADDRESS = '0x03A92c738A47Afc0A8c410B31D5475Ef28FAE2c8'
+
+# Deployed contract address
+CONTRACT_ADDRESS = '0x9282fB6d5F1263860172A7546aC04d6Fd0a17EE6'

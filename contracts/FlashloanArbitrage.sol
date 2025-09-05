@@ -178,9 +178,30 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
         // Set initial executor
         authorizedExecutors[_initialExecutor] = true;
 
-        // Set initial supported tokens (common tokens on Polygon)
-        supportedTokens[_wmatic] = true; // WMATIC
+        // Set initial supported tokens with proper limits
+        // WMATIC
+        supportedTokens[_wmatic] = true;
         maxTradeSize[_wmatic] = 10000 ether; // 10,000 MATIC
+
+        // USDC (6 decimals)
+        supportedTokens[0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174] = true;
+        maxTradeSize[0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174] = 50000 * 10**6; // 50,000 USDC
+
+        // USDT (6 decimals)
+        supportedTokens[0xc2132D05D31c914a87C6611C10748AEb04B58e8F] = true;
+        maxTradeSize[0xc2132D05D31c914a87C6611C10748AEb04B58e8F] = 50000 * 10**6; // 50,000 USDT
+
+        // WETH (18 decimals)
+        supportedTokens[0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619] = true;
+        maxTradeSize[0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619] = 20 ether; // 20 WETH
+
+        // DAI (18 decimals)
+        supportedTokens[0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063] = true;
+        maxTradeSize[0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063] = 50000 ether; // 50,000 DAI
+
+        // WBTC (8 decimals)
+        supportedTokens[0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6] = true;
+        maxTradeSize[0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6] = 2 * 10**8; // 2 WBTC
     }
 
     // =============================================================================
@@ -447,8 +468,6 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
 
         (bool success, bytes memory returnData) = address(ONEINCH_ROUTER).call(swapData);
         require(success, "1inch swap failed");
-
-
     }
 
     /**
@@ -764,6 +783,6 @@ contract FlashloanArbitrage is Ownable, ReentrancyGuard, Pausable, IFlashLoanRec
      * @return version Contract version string
      */
     function version() external pure returns (string memory) {
-        return "1.0.0";
+        return "1.0.1";
     }
 }
