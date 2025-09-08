@@ -50,37 +50,23 @@ AAVE_ADDRESSES = {
 # =============================================================================
 
 DEX_ADDRESSES = {
-    # QuickSwap (Uniswap V2 Fork) - Most liquid DEX on Polygon
-    "QUICKSWAP_ROUTER": "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
-    "QUICKSWAP_FACTORY": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
-
-    # SushiSwap
-    "SUSHISWAP_ROUTER": "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
-    "SUSHISWAP_FACTORY": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+    # Uniswap V2-style routers
+    "QuickSwap": "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
+    "SushiSwap": "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
+    "KyberSwap": "0x546C79662E028B661dFB4767664d0273184E4dD1",
+    "DODO": "0xa222f27c40cA5B9f138131eC6659582FdE16D2D7",
 
     # Uniswap V3
-    "UNISWAP_V3_ROUTER": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
-    "UNISWAP_V3_FACTORY": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-    "UNISWAP_V3_QUOTER": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",
-    "UNISWAP_V3_NFT_MANAGER": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+    "UniswapV3": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
 
-    # 1inch Aggregator
-    "ONE_INCH_ROUTER": "0x1111111254EEB25477B68fb85Ed929f73A960582",
-    "ONE_INCH_ORACLE": "0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9",
+    # 1inch (aggregator)
+    "1INCH": "0x1111111254EEB25477B68fb85Ed929f73A960582",
 
-    # Curve Finance
-    "CURVE_ADDRESS_PROVIDER": "0x0000000022D53366457F9d5E68Ec105046FC4383",
-    "CURVE_REGISTRY": "0x094d12e5b541784701FD8d65F11fc0598FBC6332",
+    # Curve
+    "Curve": "0x094d12e5b541784701FD8d65F11fc0598FBC6332",
 
     # Balancer
-    "BALANCER_VAULT": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
-    "BALANCER_HELPERS": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
-
-    # Kyber Network
-    "KYBER_ROUTER": "0x546C79662E028B661dFB4767664d0273184E4dD1",
-
-    # DODO
-    "DODO_PROXY": "0xa222f27c40cA5B9f138131eC6659582FdE16D2D7",
+    "Balancer": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
 }
 
 # =============================================================================
@@ -238,40 +224,68 @@ SECONDARY_TRADING_PAIRS = [
 DEX_CONFIG = {
     "quickswap": {
         "name": "QuickSwap",
-        "router": DEX_ADDRESSES["QUICKSWAP_ROUTER"],
-        "factory": DEX_ADDRESSES["QUICKSWAP_FACTORY"],
+        "router": DEX_ADDRESSES["QuickSwap"],
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",  # inline since removed
         "fee": 0.003,  # 0.3%
         "type": "uniswap_v2",
-        "priority": 1,  # Primary DEX
-        "gas_estimate": 150000
+        "priority": 1,
+        "gas_estimate": 150000,
     },
     "sushiswap": {
         "name": "SushiSwap",
-        "router": DEX_ADDRESSES["SUSHISWAP_ROUTER"],
-        "factory": DEX_ADDRESSES["SUSHISWAP_FACTORY"],
-        "fee": 0.003,  # 0.3%
+        "router": DEX_ADDRESSES["SushiSwap"],
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",  # inline
+        "fee": 0.003,
         "type": "uniswap_v2",
         "priority": 2,
-        "gas_estimate": 155000
+        "gas_estimate": 155000,
     },
     "uniswap_v3": {
         "name": "Uniswap V3",
-        "router": DEX_ADDRESSES["UNISWAP_V3_ROUTER"],
-        "factory": DEX_ADDRESSES["UNISWAP_V3_FACTORY"],
-        "quoter": DEX_ADDRESSES["UNISWAP_V3_QUOTER"],
-        "fee_tiers": [0.0005, 0.003, 0.01],  # 0.05%, 0.3%, 1%
+        "router": DEX_ADDRESSES["UniswapV3"],
+        "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",  # inline
+        "quoter": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",  # inline
+        "fee_tiers": [0.0005, 0.003, 0.01],
         "type": "uniswap_v3",
         "priority": 3,
-        "gas_estimate": 180000
+        "gas_estimate": 180000,
     },
     "one_inch": {
         "name": "1inch",
-        "router": DEX_ADDRESSES["ONE_INCH_ROUTER"],
-        "oracle": DEX_ADDRESSES["ONE_INCH_ORACLE"],
+        "router": DEX_ADDRESSES["1INCH"],
+        "oracle": "0x7F069df72b7A39bCE9806e3AfaF579E54D8CF2b9",  # inline
         "type": "aggregator",
-        "priority": 4,  # Use for complex routes
-        "gas_estimate": 200000
-    }
+        "priority": 4,
+        "gas_estimate": 200000,
+    },
+    "kyberswap": {
+        "name": "KyberSwap",
+        "router": DEX_ADDRESSES["KyberSwap"],
+        "type": "uniswap_v2",
+        "priority": 5,
+        "gas_estimate": 160000,
+    },
+    "dodo": {
+        "name": "DODO",
+        "router": DEX_ADDRESSES["DODO"],
+        "type": "custom",
+        "priority": 6,
+        "gas_estimate": 170000,
+    },
+    "balancer": {
+        "name": "Balancer",
+        "vault": DEX_ADDRESSES["Balancer"],
+        "type": "balancer",
+        "priority": 7,
+        "gas_estimate": 200000,
+    },
+    "curve": {
+        "name": "Curve",
+        "registry": DEX_ADDRESSES["Curve"],
+        "type": "curve",
+        "priority": 8,
+        "gas_estimate": 220000,
+    },
 }
 
 
@@ -436,3 +450,9 @@ STABLECOINS = get_stablecoin_addresses()
 TRADING_PAIRS = get_priority_pairs_by_priority()
 DEX_ROUTERS = [config["router"] for config in DEX_CONFIG.values() if "router" in config]
 # Contract addresses
+
+# Deployed contract address
+CONTRACT_ADDRESS = '0x03A92c738A47Afc0A8c410B31D5475Ef28FAE2c8'
+
+# Deployed contract address
+CONTRACT_ADDRESS = '0x9282fB6d5F1263860172A7546aC04d6Fd0a17EE6'

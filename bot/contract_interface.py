@@ -1,11 +1,16 @@
 # Web3 contract interaction
 # bot/contract_interface.py
 """
-Contract Interface - Web3 Contract Interaction Layer
+Contract Interface - Web3 Contract Interaction Layer (FIXED)
 
 This module handles all interactions with the FlashloanArbitrage smart contract
 and other DeFi protocols on the Polygon network. It provides a clean interface
 for executing flashloan arbitrage trades and managing contract state.
+
+FIXES:
+- Fixed rawTransaction -> raw_transaction compatibility
+- Updated web3.py version compatibility
+- Enhanced error handling for transaction signing
 """
 
 import json
@@ -19,11 +24,12 @@ from web3.contract import Contract
 from web3.exceptions import ContractLogicError, TransactionNotFound
 from eth_account import Account
 from eth_utils import to_checksum_address
-
+from web3.middleware import ExtraDataToPOAMiddleware
 from config.settings import Settings
 from config.addresses import POLYGON_ADDRESSES
 from .utils.helpers import format_amount, calculate_gas_price
 from .utils.logger import setup_logger
+
 
 # Setup logging
 logger = setup_logger(__name__)
@@ -68,6 +74,8 @@ class ContractInterface:
         """Setup Web3 connection to Polygon network."""
         try:
             self.w3 = Web3(Web3.HTTPProvider(self.settings.network.rpc_url))
+
+            self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
             # Verify connection
             if not self.w3.is_connected():
@@ -163,8 +171,10 @@ class ContractInterface:
             self,
             asset: str,
             amount: int,
-            dex_addresses: List[str],
-            swap_data: List[bytes],
+            buy_dex: str,
+            sell_dex: str,
+            buy_data: bytes,
+            sell_data: bytes,
             min_profit: int
     ) -> Optional[str]:
         """
@@ -173,8 +183,10 @@ class ContractInterface:
         Args:
             asset: Token address to borrow
             amount: Amount to borrow (in wei)
-            dex_addresses: List of DEX router addresses for swaps
-            swap_data: List of encoded swap data for each DEX
+            buy_dex: DEX router address for buying
+            sell_dex: DEX router address for selling
+            buy_data: Encoded swap data for buy DEX
+            sell_data: Encoded swap data for sell DEX
             min_profit: Minimum profit required (in wei)
 
         Returns:
@@ -184,15 +196,25 @@ class ContractInterface:
             logger.info(f"Executing arbitrage for {format_amount(amount, 18)} {asset[:8]}...")
 
             # Get current gas price
-            gas_price = calculate_gas_price(self.w3, self.settings.MAX_GAS_PRICE_GWEI)
+            gas_price = self.w3.to_wei(80, 'gwei')  # Use 80 gwei max
 
-            # Build transaction
+            # Create the struct parameter that matches the contract
+            arbitrage_params = (
+                to_checksum_address(asset),  # asset address
+                to_checksum_address(asset),  # repay asset (same as borrow asset)
+                amount,  # borrow amount
+                min_profit,  # minimum profit
+                to_checksum_address(buy_dex),  # buy DEX router
+                to_checksum_address(sell_dex),  # sell DEX router
+                buy_data,  # buy swap data
+                sell_data,  # sell swap data
+                self.account.address,  # recipient address
+                amount + min_profit  # repay amount (borrow + profit)
+            )
+
+            # Build transaction with struct parameter
             txn = self.flashloan_contract.functions.executeArbitrage(
-                asset,
-                amount,
-                dex_addresses,
-                swap_data,
-                min_profit
+                arbitrage_params
             ).build_transaction({
                 'from': self.account.address,
                 'gasPrice': gas_price,
@@ -219,9 +241,19 @@ class ContractInterface:
                 logger.warning("Trade not profitable after gas costs")
                 return None
 
-            # Sign and send transaction
+            # 🔧 FIXED: Sign and send transaction with proper attribute name
             signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+            # Check for both possible attribute names for web3.py version compatibility
+            if hasattr(signed_txn, 'raw_transaction'):
+                raw_transaction = signed_txn.raw_transaction  # v6+
+            elif hasattr(signed_txn, 'rawTransaction'):
+                raw_transaction = signed_txn.rawTransaction  # v5 and below
+            else:
+                logger.error("Unable to access raw transaction data - web3.py compatibility issue")
+                return None
+
+            tx_hash = self.w3.eth.send_raw_transaction(raw_transaction)
 
             logger.info(f"Transaction sent: {tx_hash.hex()}")
 
@@ -366,12 +398,19 @@ class ContractInterface:
         try:
             txn = self.flashloan_contract.functions.pause().build_transaction({
                 'from': self.account.address,
-                'gasPrice': calculate_gas_price(self.w3, self.settings.MAX_GAS_PRICE_GWEI),
+                'gasPrice': self.w3.to_wei(80, 'gwei'),
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
             })
 
             signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+            # 🔧 FIXED: Handle both web3.py versions
+            if hasattr(signed_txn, 'raw_transaction'):
+                raw_transaction = signed_txn.raw_transaction
+            else:
+                raw_transaction = signed_txn.rawTransaction
+
+            tx_hash = self.w3.eth.send_raw_transaction(raw_transaction)
 
             result = self._wait_for_confirmation(tx_hash)
             if result:
@@ -395,7 +434,14 @@ class ContractInterface:
             })
 
             signed_txn = self.w3.eth.account.sign_transaction(txn, self.settings.security.private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+            # 🔧 FIXED: Handle both web3.py versions
+            if hasattr(signed_txn, 'raw_transaction'):
+                raw_transaction = signed_txn.raw_transaction
+            else:
+                raw_transaction = signed_txn.rawTransaction
+
+            tx_hash = self.w3.eth.send_raw_transaction(raw_transaction)
 
             result = self._wait_for_confirmation(tx_hash)
             if result:

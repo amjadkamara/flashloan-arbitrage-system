@@ -177,4 +177,6 @@ local_settings.py
 
 # PyCharm specific
 .idea/
-*.iml
+*.imldebug_price_quotes.py
+test_1inch_api.py
+test_with_debug.py
