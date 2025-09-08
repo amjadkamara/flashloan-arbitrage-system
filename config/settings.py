@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from decimal import Decimal
-import json
+
 from dotenv import load_dotenv
 
 # Add project root to path
@@ -140,6 +140,72 @@ class Settings:
         self.monitoring = self._load_monitoring_config()
         self.dex = self._load_dex_config()
         self.security = self._load_security_config()
+
+        # Load contract address (fix for AttributeError)
+        self.CONTRACT_ADDRESS = os.getenv(
+            "CONTRACT_ADDRESS",
+            self.get_contract_address("FlashloanArbitrage")
+        )
+        if not self.CONTRACT_ADDRESS:
+            logger.warning("[WARNING] No CONTRACT_ADDRESS set in .env or addresses.py")
+
+        # Add missing attributes that bot code expects (FIX FOR AttributeError)
+        self.MIN_PROFIT_PERCENTAGE = float(self.trading.min_profit_threshold) / 100.0
+        self.MIN_PROFIT_THRESHOLD = float(self.trading.min_profit_threshold)
+        self.MAX_TRADE_SIZE = float(self.trading.max_trade_size)
+        self.SLIPPAGE_TOLERANCE = float(self.trading.slippage_tolerance)
+        self.GAS_PRICE_LIMIT = self.trading.gas_price_limit
+        self.MAX_FAILED_TRADES = self.risk.max_failed_trades
+        self.MAX_GAS_LIMIT = self.trading.max_gas_limit
+        self.PRICE_IMPACT_LIMIT = float(self.trading.price_impact_limit)
+        self.EXECUTION_TIMEOUT = self.trading.execution_timeout
+
+        # Network settings
+        self.NETWORK = self.network.name.lower()
+        self.WEB3_PROVIDER_URL = self.network.rpc_url
+        self.CHAIN_ID = self.network.chain_id
+        self.CURRENCY_SYMBOL = self.network.currency_symbol
+        self.BLOCK_EXPLORER = self.network.block_explorer
+        self.IS_TESTNET = self.network.is_testnet
+
+        # Security settings
+        self.PRIVATE_KEY = self.security.private_key
+        self.WALLET_ADDRESS = self.security.wallet_address
+        self.DRY_RUN_MODE = self.security.dry_run_mode
+        self.ENABLE_TESTNET = self.security.enable_testnet
+        self.REQUIRE_MANUAL_APPROVAL = self.security.require_manual_approval
+
+        # API settings
+        self.COINGECKO_API_KEY = self.api.coingecko_api_key
+        self.ONEINCH_API_KEY = self.api.oneinch_api_key
+        self.MORALIS_API_KEY = self.api.moralis_api_key
+        self.ALCHEMY_API_KEY = self.api.alchemy_api_key
+        self.RATE_LIMIT_RPM = self.api.rate_limit_requests_per_minute
+        self.REQUEST_TIMEOUT = self.api.request_timeout
+        self.MAX_RETRIES = self.api.max_retries
+
+        # Risk management
+        self.DAILY_VOLUME_LIMIT = float(self.risk.daily_volume_limit)
+        self.EMERGENCY_STOP_LOSS = float(self.risk.emergency_stop_loss)
+        self.MIN_WALLET_BALANCE = float(self.risk.min_wallet_balance)
+        self.POSITION_SIZE_LIMIT = float(self.risk.position_size_limit)
+        self.CIRCUIT_BREAKER_COOLDOWN = self.risk.circuit_breaker_cooldown
+
+        # Monitoring
+        self.TELEGRAM_BOT_TOKEN = self.monitoring.telegram_bot_token
+        self.TELEGRAM_CHAT_ID = self.monitoring.telegram_chat_id
+        self.DISCORD_WEBHOOK_URL = self.monitoring.discord_webhook_url
+        self.ENABLE_NOTIFICATIONS = self.monitoring.enable_notifications
+        self.LOG_LEVEL = self.monitoring.log_level
+        self.LOG_FILE_PATH = self.monitoring.log_file_path
+
+        # DEX settings
+        self.ENABLED_DEXES = self.dex.enabled_dexes
+        self.UNISWAP_V3_ROUTER = self.dex.uniswap_v3_router
+        self.SUSHISWAP_ROUTER = self.dex.sushiswap_router
+        self.QUICKSWAP_ROUTER = self.dex.quickswap_router
+        self.BALANCER_VAULT = self.dex.balancer_vault
+        self.DEFAULT_FEE_TIER = self.dex.default_fee_tier
 
         # Validate configuration
         self._validate_configuration()
